@@ -21,6 +21,11 @@ export async function getLimits({
   teamId: string;
   userId: string;
 }): Promise<TeamLimits> {
+  // An empty userId would drop Prisma's membership filter and match any team.
+  if (!teamId || !userId) {
+    throw new Error("Team not found");
+  }
+
   const team = await prisma.team.findFirst({
     where: { id: teamId, users: { some: { userId } } },
     select: {

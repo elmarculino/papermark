@@ -25,6 +25,10 @@ export default async function handler(
 
   const { teamId } = req.query as { teamId: string };
   const userId = (session.user as CustomUser).id;
+  if (!userId) {
+    // An empty userId would drop Prisma's membership filter and match any team.
+    return res.status(401).end("Unauthorized");
+  }
 
   const team = await prisma.team.findFirst({
     where: { id: teamId, users: { some: { userId } } },

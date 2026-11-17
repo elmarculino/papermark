@@ -8,6 +8,7 @@ import { canCreateUnlimitedTeam } from "@/ee/limits/can-create-unlimited-team";
 import { DATAROOMS_UNLIMITED_PLAN_LIMITS } from "@/ee/limits/constants";
 import { getLimits } from "@/ee/limits/server";
 import planHandler from "@/pages/api/teams/[teamId]/billing/plan";
+import limitsHandler from "@/pages/api/teams/[teamId]/limits";
 import { encode } from "next-auth/jwt";
 
 import prisma from "@/lib/prisma";
@@ -110,6 +111,32 @@ async function main() {
       { id: outsider.id, email: outsider.email! },
     );
     assert(notMember.status === 404, "plan endpoint hides other teams");
+    // A signed session without a user id must not match any team
+    // (Prisma drops an undefined filter).
+    const ghost = {
+      id: undefined as unknown as string,
+      email: `ghost-${suffix}@verify.test`,
+    };
+    for (const [name, handler] of [
+      ["plan", planHandler],
+      ["limits", limitsHandler],
+    ] as const) {
+      const result = await callApi(handler, { teamId: defaultTeam.id }, ghost);
+      assert(
+        result.status === 401,
+        `${name} endpoint must reject a session without user id, got ${result.status}`,
+      );
+    }
+    let ghostThrew = false;
+    try {
+      await getLimits({
+        teamId: defaultTeam.id,
+        userId: undefined as unknown as string,
+      });
+    } catch {
+      ghostThrew = true;
+    }
+    assert(ghostThrew, "getLimits rejects an empty userId");
     await prisma.team.delete({ where: { id: defaultTeam.id } });
 
     // Same data the create-team path (POST) writes for an unlimited team.
