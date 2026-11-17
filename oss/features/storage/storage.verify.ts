@@ -26,6 +26,24 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 async function main() {
+  // A distribution host without CloudFront keys (e.g. a plain S3 host for next.config)
+  // must not switch downloads to CloudFront signing.
+  const saved = { ...process.env };
+  process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_HOST = "bucket.s3.example.com";
+  delete process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_KEY_ID;
+  delete process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_KEY_CONTENTS;
+  assert(
+    getStorageConfig().distributionHost === undefined,
+    "no CloudFront keys -> no distributionHost",
+  );
+  process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_KEY_ID = "KID";
+  process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_KEY_CONTENTS = "PEM";
+  assert(
+    getStorageConfig().distributionHost === "bucket.s3.example.com",
+    "CloudFront keys -> distributionHost",
+  );
+  process.env = saved;
+
   const config = getStorageConfig();
   assert(
     config.forcePathStyle ===

@@ -34,14 +34,16 @@ export const UNLIMITED_PLAN_LIMITS: PlanLimits = {
   links: Infinity,
   users: Infinity,
   domains: Infinity,
-  datarooms: Infinity,
+  // Client code reads `limits.datarooms ?? 1`, so this must survive JSON as a number.
+  datarooms: Number.MAX_SAFE_INTEGER,
   customDomainOnPro: true,
   customDomainInDataroom: true,
   advancedLinkControlsOnPro: true,
   watermarkOnBusiness: true,
   agreementOnBusiness: true,
   conversationsInDataroom: false,
-  linkCustomFields: Infinity,
+  // Shown in the UI ("up to N custom fields") and read as `?? 0`: keep it finite.
+  linkCustomFields: 20,
   dataroomUpload: true,
 };
 

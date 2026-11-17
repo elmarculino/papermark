@@ -12,7 +12,7 @@ export interface StorageConfig {
   endpoint?: string;
   /** Path-style URLs (`endpoint/bucket/key`). Needed by MinIO/Garage without wildcard DNS. */
   forcePathStyle: boolean;
-  /** Optional CloudFront host for signed downloads. */
+  /** CloudFront host for signed downloads; set only when the signing keys are set too. */
   distributionHost?: string;
   distributionKeyId?: string;
   distributionKeyContents?: string;
@@ -39,8 +39,13 @@ export function getStorageConfig(_storageRegion?: string): StorageConfig {
     secretAccessKey: required("NEXT_PRIVATE_UPLOAD_SECRET_ACCESS_KEY"),
     endpoint: process.env.NEXT_PRIVATE_UPLOAD_ENDPOINT || undefined,
     forcePathStyle: process.env.NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE === "true",
+    // Only with CloudFront signing keys: the download route signs with CloudFront whenever
+    // a distribution host is set. The env var itself may be a plain S3 host (next.config).
     distributionHost:
-      process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_HOST || undefined,
+      process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_KEY_ID &&
+      process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_KEY_CONTENTS
+        ? process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_HOST || undefined
+        : undefined,
     distributionKeyId:
       process.env.NEXT_PRIVATE_UPLOAD_DISTRIBUTION_KEY_ID || undefined,
     distributionKeyContents:
