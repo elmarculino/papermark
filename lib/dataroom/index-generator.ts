@@ -1,7 +1,6 @@
 import { DataroomFolder, Document, DocumentVersion } from "@prisma/client";
 import ExcelJS from "exceljs";
 
-import { LinkWithDataroom } from "../types";
 import {
   DataroomIndex,
   DataroomIndexEntry,
@@ -12,6 +11,19 @@ interface GenerateIndexOptions {
   format?: IndexFileFormat;
   baseUrl?: string;
   showHierarchicalIndex?: boolean;
+}
+
+/** [fork] What the index generator reads; callers build it from their own queries. */
+export interface DataroomIndexSource {
+  id: string;
+  dataroom: {
+    id: string;
+    name: string;
+    createdAt: Date;
+    lastUpdatedAt: Date;
+    folders: DataroomFolder[];
+    documents: DataroomDocumentWithVersion[];
+  };
 }
 
 interface DataroomDocumentWithVersion {
@@ -47,7 +59,7 @@ const formatBytes = (bytes: number): number => {
 };
 
 export async function generateDataroomIndex(
-  link: LinkWithDataroom,
+  link: DataroomIndexSource,
   options: GenerateIndexOptions = {},
 ): Promise<{ data: Buffer; filename: string; mimeType: string }> {
   const { format = "excel", baseUrl, showHierarchicalIndex = false } = options;
