@@ -17,18 +17,25 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 | `features/billing`                                                                                                                                                                   | stub                                 | ✅     | `isTeamPaused*` → `false`; trial and pause Trigger.dev tasks are no-ops; pause/unpause API routes return 404; `CancellationModal` renders nothing                                                                                                                                                                                                                                                                                                                                              |
 | `features/storage`                                                                                                                                                                   | real                                 | ✅     | Env-driven S3 config with a single region, plus a tus `S3Store`. New env: `NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE` (MinIO/Garage), `NEXT_PRIVATE_ADVANCED_UPLOAD_BUCKET`, `NEXT_PRIVATE_DOWNLOAD_LAMBDA_FUNCTION_NAME`. **Bulk ZIP download still needs AWS Lambda** and has to be replaced to run elsewhere.                                                                                                                                                                                    |
 | `features/security`                                                                                                                                                                  | real (rate limit) + drop (SAML/SCIM) | ✅     | `checkRateLimit`/`rateLimiters` on `lib/redis` `ratelimit()`, failing open if Redis is down. SSO components render nothing; `JACKSON_PRODUCT` constant kept for `lib/jackson.ts`                                                                                                                                                                                                                                                                                                               |
-| `features/branding`                                                                                                                                                                  | real (minimal)                       | ⏳     | Not public upstream. 29 importers. Logo + colors; advanced layout options as stubs                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `features/permissions`                                                                                                                                                               | real                                 | ⏳     | Per-item data-room permissions, confidential view                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `features/conversions`                                                                                                                                                               | real                                 | ⏳     | Office/Keynote → PDF via Gotenberg                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `features/branding`                                                                                                                                                                  | real (minimal)                       | ✅     | Team brands (switcher, default, delete), data-room brands with inheritance, link social preview, layouts/presets, banner (image/video/YouTube), visitor language, live preview iframes over postMessage. **Missing upstream:** `/api/branding/auto-fill` ("auto-fill from website" shows an error).                                                                                                                                                                                            |
+| `features/permissions`                                                                                                                                                               | real                                 | ◐      | ✅ `DataroomLinkSheet` = AGPL `LinkSheet` (create/edit data-room links); confidential view (toggle + blur-with-spotlight overlay). ⏳ Per-link `PermissionsSheet` (no call sites): per-folder access is set with viewer groups.                                                                                                                                                                                                                                                                |
+| `features/conversions`                                                                                                                                                               | real                                 | ✅     | Office/Keynote → PDF via Gotenberg (`GOTENBERG_URL`), PDF stored next to the original, then the existing PDF → images task. Keynote untested (no sample file).                                                                                                                                                                                                                                                                                                                                 |
 | `features/dataroom-invitations`                                                                                                                                                      | stub (rewrite later?)                | ✅     | Invite buttons show a "not available" toast and the modal closes; invite APIs 404; `invitationEmailSchema` is a real email check. Could be rewritten later (simple).                                                                                                                                                                                                                                                                                                                           |
 | `features/request-lists`, `partners`, `access-notifications`, `dataroom-analytics`                                                                                                   | stub                                 | ✅     | Feature hooks return `false` (sidebar hides Tasks), viewer UI renders nothing, `isViewerAssigned` → `false`: task-only uploads on links without uploads enabled are refused (no AGPL code creates tasks anyway). Partners: referral link hidden, page shows notice. Access notifications: denied access is still denied, just not reported. Data-room analytics page shows notice. Dropped dashboard pages (analytics, partners, workflows, conversations) show the notice inside `AppLayout`. |
 | `features/ai`, `conversations`, `workflows`, `dataroom-freeze`, `templates`, `redaction`                                                                                             | drop                                 | ✅     | Providers and layouts pass children through; buttons, dialogs and panels render nothing; pages show "not available"; API routes 404; Trigger.dev tasks are no-ops with `oss-noop-*` IDs. Templates: `FolderTemplate` type plus our own prompts, so the AGPL AI-structure route still works                                                                                                                                                                                                     |
-| AGPL-side gaps: `lib/api/errors`, `lib/dataroom/apply-default-permissions`, `lib/api/auth/restricted-tokens`, `lib/oauth/scopes`, `lib/dataroom/index-generator#DataroomIndexSource` | real                                 | ⏳     | Missing from upstream's public repo                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| AGPL-side gaps: `lib/api/errors`, `lib/dataroom/apply-default-permissions`, `lib/api/auth/restricted-tokens`, `lib/oauth/scopes`, `lib/dataroom/index-generator#DataroomIndexSource` | real                                 | ✅     | Written in `lib/` (`[fork]` header); `index-generator` takes the `DataroomIndexSource` its callers build.                                                                                                                                                                                                                                                                                                                                                                                      |
+
+## Known gaps (runtime, not type errors)
+
+- Upstream routes not in the public repo: `/api/branding/auto-fill`, `/api/geo/currency`, `/api/teams/:id/billing/currency` (404s; billing UI only).
+- Upstream analytics: `/api/record_view` needs Tinybird; view tracking fails without it.
+- Bulk ZIP download needs AWS Lambda.
+- `tsc` needs `next-env.d.ts` (created by `next dev`/`next build`; gitignored).
 
 ## Progress check
 
 ```sh
-npx tsc --noEmit | grep -c "error TS"          # 380 at fork point, 247 after stripe/limits, 210 after billing/storage/rate-limit, 158 after the drop stubs, 129 after the small-feature stubs
+npx tsc --noEmit | grep -c "error TS"          # 380 at fork point, 247 after stripe/limits, 210 after billing/storage/rate-limit, 158 after the drop stubs, 129 after the small-feature stubs, **0** after gaps/conversions/permissions/branding
 npx tsc --noEmit | grep -oE "Cannot find module '@/ee/[^']+'" | sort -u
 ```
 
@@ -61,27 +68,27 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/branding
 
-- `features/branding/components/banner-editor`: `BannerEditor` (2)
-- `features/branding/components/branding-link-preview-form`: `BrandingLinkPreviewForm` (2)
-- `features/branding/components/branding-preview-chrome`: `BrandingPreviewChrome` (2)
-- `features/branding/components/branding-social-preview-readonly`: `BrandingSocialPreviewReadonly` (1)
-- `features/branding/components/collapsible-branding-section`: `CollapsibleBrandingSection` (2)
-- `features/branding/components/dataroom-layout-preset-cards`: `DataroomLayoutPresetCards` (2)
-- `features/branding/components/team-brand-switcher`: `DRAFT_TEAM_BRAND_ID` (1), `TeamBrandSwitcher` (1), `nextTeamBrandName` (1)
-- `features/branding/components/visitor-language-card`: `VisitorLanguageCard` (1)
-- `features/branding/lib/auto-fill-result`: `AUTO_FILL_NOT_FOUND_MESSAGE` (2), `autoFillHasBrandAssets` (2)
-- `features/branding/lib/brand-logo`: `BrandLogoFields (type)` (1), `ResolvedBrandLogo (type)` (3), `resolveBrandLogo` (7)
-- `features/branding/lib/dataroom-banner`: `DataroomBannerKind (type)` (1), `classifyDataroomBanner` (3)
-- `features/branding/lib/dataroom-preview-presets`: `getDataroomPreviewDataset` (1)
-- `features/branding/lib/dataroom-viewer-layout`: `CARD_LAYOUT_OPTIONS` (2), `DataroomCardLayout (type)` (8), `DataroomCardLayoutSchema` (2), `DataroomLayoutCardId (type)` (2), `DataroomViewerHeaderStyle (type)` (7), `DataroomViewerHeaderStyleSchema` (2), `DataroomViewerLayoutPreset (type)` (2), `DataroomViewerLayoutPresetSchema` (2), `asDataroomCardLayout` (3), `asDataroomViewerHeaderStyle` (4), `inferDataroomViewerLayoutPreset` (2)
-- `features/branding/lib/delete-team-brand`: `deleteTeamBrand` (2)
-- `features/branding/lib/prepare-brand-write`: `prepareBrandWrite` (2)
-- `features/branding/lib/resolve-base-brand`: `findDefaultBrand` (1), `persistDefaultBrand` (1), `resolveBaseBrand` (2), `resolveDefaultBrandId` (5), `resolveOwnedBrandId` (3), `teamBrandOgSelect` (1), `teamBrandViewerSelect` (1), `teamBrandWorkflowSelect` (1)
-- `features/branding/lib/resolve-dataroom-displayed-brand`: `CUSTOM_DATAROOM_BRAND` (2), `CUSTOM_DATAROOM_BRAND_LABEL` (2), `inheritsTeamBrand` (1), `resolveDisplayedDataroomBrand` (1)
-- `features/branding/lib/resolve-public-link-meta`: `ResolvedPublicLinkMeta (type)` (1), `resolvePublicLinkMeta` (1)
-- `features/branding/lib/upsert-dataroom-brand`: `upsertDataroomBrandAndClearInherited` (1)
-- `features/branding/lib/use-branding-preview-params`: `useBrandingPreviewParams` (3)
-- `features/branding/lib/use-logo-tone`: `useLogoTone` (2)
+- ✅ `features/branding/components/banner-editor`: `BannerEditor` (2)
+- ✅ `features/branding/components/branding-link-preview-form`: `BrandingLinkPreviewForm` (2)
+- ✅ `features/branding/components/branding-preview-chrome`: `BrandingPreviewChrome` (2)
+- ✅ `features/branding/components/branding-social-preview-readonly`: `BrandingSocialPreviewReadonly` (1)
+- ✅ `features/branding/components/collapsible-branding-section`: `CollapsibleBrandingSection` (2)
+- ✅ `features/branding/components/dataroom-layout-preset-cards`: `DataroomLayoutPresetCards` (2)
+- ✅ `features/branding/components/team-brand-switcher`: `DRAFT_TEAM_BRAND_ID` (1), `TeamBrandSwitcher` (1), `nextTeamBrandName` (1)
+- ✅ `features/branding/components/visitor-language-card`: `VisitorLanguageCard` (1)
+- ✅ `features/branding/lib/auto-fill-result`: `AUTO_FILL_NOT_FOUND_MESSAGE` (2), `autoFillHasBrandAssets` (2)
+- ✅ `features/branding/lib/brand-logo`: `BrandLogoFields (type)` (1), `ResolvedBrandLogo (type)` (3), `resolveBrandLogo` (7)
+- ✅ `features/branding/lib/dataroom-banner`: `DataroomBannerKind (type)` (1), `classifyDataroomBanner` (3)
+- ✅ `features/branding/lib/dataroom-preview-presets`: `getDataroomPreviewDataset` (1)
+- ✅ `features/branding/lib/dataroom-viewer-layout`: `CARD_LAYOUT_OPTIONS` (2), `DataroomCardLayout (type)` (8), `DataroomCardLayoutSchema` (2), `DataroomLayoutCardId (type)` (2), `DataroomViewerHeaderStyle (type)` (7), `DataroomViewerHeaderStyleSchema` (2), `DataroomViewerLayoutPreset (type)` (2), `DataroomViewerLayoutPresetSchema` (2), `asDataroomCardLayout` (3), `asDataroomViewerHeaderStyle` (4), `inferDataroomViewerLayoutPreset` (2)
+- ✅ `features/branding/lib/delete-team-brand`: `deleteTeamBrand` (2)
+- ✅ `features/branding/lib/prepare-brand-write`: `prepareBrandWrite` (2)
+- ✅ `features/branding/lib/resolve-base-brand`: `findDefaultBrand` (1), `persistDefaultBrand` (1), `resolveBaseBrand` (2), `resolveDefaultBrandId` (5), `resolveOwnedBrandId` (3), `teamBrandOgSelect` (1), `teamBrandViewerSelect` (1), `teamBrandWorkflowSelect` (1)
+- ✅ `features/branding/lib/resolve-dataroom-displayed-brand`: `CUSTOM_DATAROOM_BRAND` (2), `CUSTOM_DATAROOM_BRAND_LABEL` (2), `inheritsTeamBrand` (1), `resolveDisplayedDataroomBrand` (1)
+- ✅ `features/branding/lib/resolve-public-link-meta`: `ResolvedPublicLinkMeta (type)` (1), `resolvePublicLinkMeta` (1)
+- ✅ `features/branding/lib/upsert-dataroom-brand`: `upsertDataroomBrandAndClearInherited` (1)
+- ✅ `features/branding/lib/use-branding-preview-params`: `useBrandingPreviewParams` (3)
+- ✅ `features/branding/lib/use-logo-tone`: `useLogoTone` (2)
 
 ### features/conversations
 
@@ -102,7 +109,7 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/conversions
 
-- `features/conversions/lib/trigger/convert-files`: `convertFilesToPdfTask (type)` (3), `convertKeynoteToPdfTask (type)` (1)
+- ✅ `features/conversions/lib/trigger/convert-files`: `convertFilesToPdfTask (type)` (3), `convertKeynoteToPdfTask (type)` (1)
 
 ### features/dataroom-analytics
 
@@ -129,10 +136,10 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/permissions
 
-- `features/permissions/components/confidential-view/confidential-view-overlay`: `ConfidentialViewOverlay` (7)
-- `features/permissions/components/confidential-view/confidential-view-section`: `default` (4)
-- `features/permissions/components/dataroom-link-sheet`: `DataroomLinkSheet` (1), `ItemPermission (type)` (1)
-- `features/permissions/components/permissions-sheet`: `PermissionsSheet` (1)
+- ✅ `features/permissions/components/confidential-view/confidential-view-overlay`: `ConfidentialViewOverlay` (7)
+- ✅ `features/permissions/components/confidential-view/confidential-view-section`: `default` (4)
+- ✅ `features/permissions/components/dataroom-link-sheet`: `DataroomLinkSheet` (1), `ItemPermission (type)` (1)
+- ✅ `features/permissions/components/permissions-sheet`: `PermissionsSheet` (1)
 
 ### features/redaction
 
