@@ -20,15 +20,15 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 | `features/branding`                                                                                                                                                                  | real (minimal)                       | ⏳     | Not public upstream. 29 importers. Logo + colors; advanced layout options as stubs                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `features/permissions`                                                                                                                                                               | real                                 | ⏳     | Per-item data-room permissions, confidential view                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `features/conversions`                                                                                                                                                               | real                                 | ⏳     | Office/Keynote → PDF via Gotenberg                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `features/dataroom-invitations`                                                                                                                                                      | stub (rewrite later?)                | ⏳     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `features/request-lists`, `partners`, `access-notifications`, `dataroom-analytics`                                                                                                   | stub                                 | ⏳     | Feature-flag hooks return `false`, components render `null`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `features/dataroom-invitations`                                                                                                                                                      | stub (rewrite later?)                | ✅     | Invite modal renders nothing, invite APIs 404, `invitationEmailSchema` is a real email check. Could be rewritten later (simple).                                                                                                                                                                                                                                                                                                                                                         |
+| `features/request-lists`, `partners`, `access-notifications`, `dataroom-analytics`                                                                                                   | stub                                 | ✅     | Feature hooks return `false` (sidebar hides Tasks), viewer UI renders nothing, `isViewerAssigned` → `false` so the viewer tus route rejects task uploads. Partners: referral link hidden, page shows notice. Access notifications: denied access is still denied, just not reported. Data-room analytics page shows notice.                                                                                                                                                              |
 | `features/ai`, `conversations`, `workflows`, `dataroom-freeze`, `templates`, `redaction`                                                                                             | drop                                 | ✅     | Providers and layouts pass children through; buttons, dialogs and panels render nothing; pages show "not available"; API routes 404; Trigger.dev tasks are no-ops with `oss-noop-*` IDs. Templates: `FolderTemplate` type plus our own prompts, so the AGPL AI-structure route still works                                                                                                                                                                                               |
 | AGPL-side gaps: `lib/api/errors`, `lib/dataroom/apply-default-permissions`, `lib/api/auth/restricted-tokens`, `lib/oauth/scopes`, `lib/dataroom/index-generator#DataroomIndexSource` | real                                 | ⏳     | Missing from upstream's public repo                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Progress check
 
 ```sh
-npx tsc --noEmit | grep -c "error TS"          # 380 at fork point, 247 after stripe/limits, 210 after billing/storage/rate-limit, 158 after the drop stubs
+npx tsc --noEmit | grep -c "error TS"          # 380 at fork point, 247 after stripe/limits, 210 after billing/storage/rate-limit, 158 after the drop stubs, 129 after the small-feature stubs
 npx tsc --noEmit | grep -oE "Cannot find module '@/ee/[^']+'" | sort -u
 ```
 
@@ -38,7 +38,7 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/access-notifications
 
-- `features/access-notifications`: `reportDeniedAccessAttempt` (2)
+- ✅ `features/access-notifications`: `reportDeniedAccessAttempt` (2)
 
 ### features/ai
 
@@ -106,7 +106,7 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/dataroom-analytics
 
-- `features/dataroom-analytics/pages/dataroom-analytics-page`: `(re-export)` (1)
+- ✅ `features/dataroom-analytics/pages/dataroom-analytics-page`: `(re-export)` (1)
 
 ### features/dataroom-freeze
 
@@ -115,17 +115,17 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/dataroom-invitations
 
-- `features/dataroom-invitations/api/group-invite`: `default` (1)
-- `features/dataroom-invitations/api/link-invite`: `default` (1)
-- `features/dataroom-invitations/api/uninvited`: `default` (1)
-- `features/dataroom-invitations/components/invite-viewers-modal`: `InviteViewersModal` (4)
-- `features/dataroom-invitations/lib/schema/dataroom-invitations`: `invitationEmailSchema` (1)
-- `features/dataroom-invitations/lib/swr/use-dataroom-invitations`: `useUninvitedMembers` (1)
+- ✅ `features/dataroom-invitations/api/group-invite`: `default` (1)
+- ✅ `features/dataroom-invitations/api/link-invite`: `default` (1)
+- ✅ `features/dataroom-invitations/api/uninvited`: `default` (1)
+- ✅ `features/dataroom-invitations/components/invite-viewers-modal`: `InviteViewersModal` (4)
+- ✅ `features/dataroom-invitations/lib/schema/dataroom-invitations`: `invitationEmailSchema` (1)
+- ✅ `features/dataroom-invitations/lib/swr/use-dataroom-invitations`: `useUninvitedMembers` (1)
 
 ### features/partners
 
-- `features/partners/lib/referrals`: `isReferralsEnabled` (2)
-- `features/partners/pages/partner-program`: `(re-export)` (1)
+- ✅ `features/partners/lib/referrals`: `isReferralsEnabled` (2)
+- ✅ `features/partners/pages/partner-program`: `(re-export)` (1)
 
 ### features/permissions
 
@@ -143,14 +143,14 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/request-lists
 
-- `features/request-lists/components/request-list-settings-card`: `RequestListSettingsCard` (1)
-- `features/request-lists/components/request-list-view`: `RequestListView` (1)
-- `features/request-lists/components/viewer/request-list-button`: `RequestListButton` (1)
-- `features/request-lists/components/viewer/request-list-sheet`: `RequestListSheet` (1)
-- `features/request-lists/lib/assignments`: `isViewerAssigned` (1)
-- `features/request-lists/lib/events`: `VIEWER_TOGGLE_REQUEST_LIST_EVENT` (1)
-- `features/request-lists/lib/swr/use-viewer-request-list`: `useViewerRequestList` (3)
-- `features/request-lists/lib/use-request-list-feature`: `useRequestListFeatureEnabled` (3)
+- ✅ `features/request-lists/components/request-list-settings-card`: `RequestListSettingsCard` (1)
+- ✅ `features/request-lists/components/request-list-view`: `RequestListView` (1)
+- ✅ `features/request-lists/components/viewer/request-list-button`: `RequestListButton` (1)
+- ✅ `features/request-lists/components/viewer/request-list-sheet`: `RequestListSheet` (1)
+- ✅ `features/request-lists/lib/assignments`: `isViewerAssigned` (1)
+- ✅ `features/request-lists/lib/events`: `VIEWER_TOGGLE_REQUEST_LIST_EVENT` (1)
+- ✅ `features/request-lists/lib/swr/use-viewer-request-list`: `useViewerRequestList` (3)
+- ✅ `features/request-lists/lib/use-request-list-feature`: `useRequestListFeatureEnabled` (3)
 
 ### features/security
 

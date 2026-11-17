@@ -3,6 +3,7 @@
  */
 import type { NextApiRequest, NextApiResponse } from "next";
 
+import { reportDeniedAccessAttempt } from "@/ee/features/access-notifications";
 import {
   ViewerChatLayout,
   ViewerChatProvider,
@@ -19,6 +20,13 @@ import {
   useConversationSidebarSafe,
 } from "@/ee/features/conversations/components/viewer/conversation-sidebar-provider";
 import { useFreezeProgress } from "@/ee/features/dataroom-freeze/lib/swr/use-freeze-progress";
+import { InviteViewersModal } from "@/ee/features/dataroom-invitations/components/invite-viewers-modal";
+import { invitationEmailSchema } from "@/ee/features/dataroom-invitations/lib/schema/dataroom-invitations";
+import { useUninvitedMembers } from "@/ee/features/dataroom-invitations/lib/swr/use-dataroom-invitations";
+import { isReferralsEnabled } from "@/ee/features/partners/lib/referrals";
+import { isViewerAssigned } from "@/ee/features/request-lists/lib/assignments";
+import { useViewerRequestList } from "@/ee/features/request-lists/lib/swr/use-viewer-request-list";
+import { useRequestListFeatureEnabled } from "@/ee/features/request-lists/lib/use-request-list-feature";
 import { SSOLogin } from "@/ee/features/security/sso";
 import {
   getDataroomSystemPrompt,
@@ -28,6 +36,9 @@ import { PlanEnum } from "@/ee/stripe/constants";
 import { getPriceIdFromPlan } from "@/ee/stripe/functions/get-price-id-from-plan";
 import { PLANS, isOldAccount } from "@/ee/stripe/utils";
 import conversationsToggleRoute from "@/pages/api/teams/[teamId]/datarooms/[id]/conversations/toggle-conversations";
+import linkInviteRoute from "@/pages/api/teams/[teamId]/datarooms/[id]/links/[linkId]/invite";
+import DataroomAnalyticsPage from "@/pages/datarooms/[id]/analytics/index";
+import PartnersPage from "@/pages/partners";
 import WorkflowsPage from "@/pages/workflows/index";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -123,6 +134,43 @@ async function main() {
     (await getDataroomUserPrompt("M&A")).includes("M&A"),
     "user prompt includes description",
   );
+
+  // Small stubbed features: request lists, invitations, partners, analytics, access notifications.
+  assert(useRequestListFeatureEnabled() === false, "request lists disabled");
+  assert(useViewerRequestList({}).enabled === false, "no viewer request list");
+  assert(
+    isViewerAssigned([{ email: "a@b.c" }], { email: "a@b.c" }) === false,
+    "no viewer is assigned an upload task",
+  );
+  assert(isReferralsEnabled() === false, "referral program hidden");
+  assert(
+    useUninvitedMembers("d", "g").uninvitedCount === 0,
+    "no uninvited members",
+  );
+  assert(
+    invitationEmailSchema.safeParse(" a@b.co ").success &&
+      !invitationEmailSchema.safeParse("not-an-email").success,
+    "invitation email schema validates addresses",
+  );
+  await reportDeniedAccessAttempt({}, "a@b.c", "denied"); // resolves, no throw
+  assert(
+    renderToStaticMarkup(
+      <InviteViewersModal open setOpen={() => {}} dataroomId="d" />,
+    ) === "",
+    "invite modal renders nothing",
+  );
+  status = 0;
+  await linkInviteRoute({} as NextApiRequest, res);
+  assert(status === 404, `invite API should 404, got ${status}`);
+  for (const [name, Page] of [
+    ["partners", PartnersPage],
+    ["dataroom analytics", DataroomAnalyticsPage],
+  ] as const) {
+    assert(
+      renderToStaticMarkup(<Page />).includes("not available"),
+      `${name} page shows notice`,
+    );
+  }
 
   // Trigger.dev task IDs must be unique across the app and oss/ stubs.
   const ids = [...walk("lib/trigger"), ...walk("oss")]
