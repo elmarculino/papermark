@@ -1,1 +1,1 @@
-export { FeatureUnavailablePage as default } from "@/oss/_shared/stub";
+export { FeatureUnavailableAppPage as default } from "@/oss/_shared/unavailable-app-page";

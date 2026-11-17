@@ -25,6 +25,7 @@ Runtime checks next to the code they test (`*.verify.ts[x]`, the repo's existing
 ```sh
 TSX="npx tsx --tsconfig oss/tsconfig.verify.json"
 $TSX oss/_shared/stubs.verify.tsx                       # no services needed
+$TSX oss/_shared/unavailable-pages.verify.tsx           # no services needed
 POSTGRES_PRISMA_URL=... NEXTAUTH_SECRET=x HANKO_API_KEY=x NEXT_PUBLIC_HANKO_TENANT_ID=x \
   $TSX oss/limits/limits.verify.ts                       # migrated Postgres + `prisma generate`
 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... $TSX oss/features/security/rate-limit.verify.ts
