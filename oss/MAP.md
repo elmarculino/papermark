@@ -33,6 +33,14 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 - Confidential view: upstream's Notion viewer (`components/view/viewer/notion-page.tsx`) imports the overlay but never renders it; in the HTML viewer (behind the `htmlDocuments` flag) the spotlight can't follow the pointer inside the sandboxed iframe, so the page stays blurred.
 - `tsc` needs `next-env.d.ts` (created by `next dev`/`next build`; gitignored).
 
+## Queue (production readiness)
+
+1. ✅ Email over SMTP (`lib/resend.ts`, `SMTP_*` / `EMAIL_FROM`).
+2. Dockerfile + Komodo stack (app, Postgres, storage, Redis + REST adapter, Gotenberg, Trigger.dev).
+3. Feature flags from env instead of Vercel Edge Config.
+4. Tinybird → plain ClickHouse: 5 tables from `lib/tinybird/datasources`, 15 queries from `lib/tinybird/endpoints`, swap `publish.ts`/`pipes.ts`. Don't use Tinybird Local (proprietary TSML license, production use only within Tinybird's usage limits).
+5. Email templates: replace Papermark, Inc. branding/address in `components/emails`.
+
 ## Progress check
 
 ```sh
