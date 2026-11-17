@@ -1,5 +1,5 @@
 /**
- * Runtime check for stubbed and dropped features: npx tsx oss/_shared/stubs.verify.tsx
+ * Runtime check for stubbed and dropped features (dashboard pages: unavailable-pages.verify.tsx).
  */
 import type { NextApiRequest, NextApiResponse } from "next";
 
@@ -37,9 +37,6 @@ import { getPriceIdFromPlan } from "@/ee/stripe/functions/get-price-id-from-plan
 import { PLANS, isOldAccount } from "@/ee/stripe/utils";
 import conversationsToggleRoute from "@/pages/api/teams/[teamId]/datarooms/[id]/conversations/toggle-conversations";
 import linkInviteRoute from "@/pages/api/teams/[teamId]/datarooms/[id]/links/[linkId]/invite";
-import DataroomAnalyticsPage from "@/pages/datarooms/[id]/analytics/index";
-import PartnersPage from "@/pages/partners";
-import WorkflowsPage from "@/pages/workflows/index";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -122,12 +119,6 @@ async function main() {
   await conversationsToggleRoute({} as NextApiRequest, res);
   assert(status === 404, `dropped API route should 404, got ${status}`);
 
-  // Pages of dropped features render a notice instead of crashing.
-  assert(
-    renderToStaticMarkup(<WorkflowsPage />).includes("not available"),
-    "workflows page shows notice",
-  );
-
   // Templates prompts are real text for the AGPL AI-structure route.
   assert((await getDataroomSystemPrompt()).length > 50, "system prompt");
   assert(
@@ -162,15 +153,6 @@ async function main() {
   status = 0;
   await linkInviteRoute({} as NextApiRequest, res);
   assert(status === 404, `invite API should 404, got ${status}`);
-  for (const [name, Page] of [
-    ["partners", PartnersPage],
-    ["dataroom analytics", DataroomAnalyticsPage],
-  ] as const) {
-    assert(
-      renderToStaticMarkup(<Page />).includes("not available"),
-      `${name} page shows notice`,
-    );
-  }
 
   // Trigger.dev task IDs must be unique across the app and oss/ stubs.
   const ids = [...walk("lib/trigger"), ...walk("oss")]

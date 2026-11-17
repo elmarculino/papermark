@@ -25,7 +25,10 @@ export function InviteViewersModal({
 }) {
   useEffect(() => {
     if (open) {
-      toast.info("Email invitations are not available in this edition.");
+      // Fixed id: Strict Mode runs effects twice in dev; sonner keeps one toast per id.
+      toast.info("Email invitations are not available in this edition.", {
+        id: "invitations-unavailable",
+      });
       setOpen(false);
     }
   }, [open, setOpen]);
