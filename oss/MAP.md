@@ -11,24 +11,24 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 
 ## Status
 
-| Module                                                                                                                                                                               | Kind                                 | Status | Notes                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `stripe/*`, `limits/*`                                                                                                                                                               | stub                                 | ✅     | Every new team gets the `datarooms-unlimited` plan (via `canCreateUnlimitedTeam → true`). Numeric limits are `Infinity`. Kept as an interface for possible SaaS work later. |
-| `features/billing`                                                                                                                                                                   | stub                                 | ⏳     | `isTeamPaused*` → `false`; trial and pause tasks no-op; cancellation UI renders nothing                                                                                     |
-| `features/storage`                                                                                                                                                                   | real                                 | ⏳     | Env-driven S3 config with a single region, plus a tus `S3Store` (MinIO/Garage/R2)                                                                                           |
-| `features/security`                                                                                                                                                                  | real (rate limit) + drop (SAML/SCIM) | ⏳     | `checkRateLimit`/`rateLimiters` on `@upstash/ratelimit`                                                                                                                     |
-| `features/branding`                                                                                                                                                                  | real (minimal)                       | ⏳     | Not public upstream. 29 importers. Logo + colors; advanced layout options as stubs                                                                                          |
-| `features/permissions`                                                                                                                                                               | real                                 | ⏳     | Per-item data-room permissions, confidential view                                                                                                                           |
-| `features/conversions`                                                                                                                                                               | real                                 | ⏳     | Office/Keynote → PDF via Gotenberg                                                                                                                                          |
-| `features/dataroom-invitations`                                                                                                                                                      | stub (rewrite later?)                | ⏳     |                                                                                                                                                                             |
-| `features/request-lists`, `partners`, `access-notifications`, `dataroom-analytics`                                                                                                   | stub                                 | ⏳     | Feature-flag hooks return `false`, components render `null`                                                                                                                 |
-| `features/ai`, `conversations`, `workflows`, `dataroom-freeze`, `templates`, `redaction`                                                                                             | drop                                 | ⏳     | UI stubs render `null`; delete their pages and routes                                                                                                                       |
-| AGPL-side gaps: `lib/api/errors`, `lib/dataroom/apply-default-permissions`, `lib/api/auth/restricted-tokens`, `lib/oauth/scopes`, `lib/dataroom/index-generator#DataroomIndexSource` | real                                 | ⏳     | Missing from upstream's public repo                                                                                                                                         |
+| Module                                                                                                                                                                               | Kind                                 | Status | Notes                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stripe/*`, `limits/*`                                                                                                                                                               | stub                                 | ✅     | Every new team gets the `datarooms-unlimited` plan (via `canCreateUnlimitedTeam → true`). Numeric limits are `Infinity`. Kept as an interface for possible SaaS work later.                                                                                                                                 |
+| `features/billing`                                                                                                                                                                   | stub                                 | ✅     | `isTeamPaused*` → `false`; trial and pause Trigger.dev tasks are no-ops; pause/unpause API routes return 404; `CancellationModal` renders nothing                                                                                                                                                           |
+| `features/storage`                                                                                                                                                                   | real                                 | ✅     | Env-driven S3 config with a single region, plus a tus `S3Store`. New env: `NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE` (MinIO/Garage), `NEXT_PRIVATE_ADVANCED_UPLOAD_BUCKET`, `NEXT_PRIVATE_DOWNLOAD_LAMBDA_FUNCTION_NAME`. **Bulk ZIP download still needs AWS Lambda** and has to be replaced to run elsewhere. |
+| `features/security`                                                                                                                                                                  | real (rate limit) + drop (SAML/SCIM) | ◐      | ✅ `checkRateLimit`/`rateLimiters` on `lib/redis` `ratelimit()`, failing open if Redis is down. ⏳ SAML/SCIM drop (`security/sso`)                                                                                                                                                                          |
+| `features/branding`                                                                                                                                                                  | real (minimal)                       | ⏳     | Not public upstream. 29 importers. Logo + colors; advanced layout options as stubs                                                                                                                                                                                                                          |
+| `features/permissions`                                                                                                                                                               | real                                 | ⏳     | Per-item data-room permissions, confidential view                                                                                                                                                                                                                                                           |
+| `features/conversions`                                                                                                                                                               | real                                 | ⏳     | Office/Keynote → PDF via Gotenberg                                                                                                                                                                                                                                                                          |
+| `features/dataroom-invitations`                                                                                                                                                      | stub (rewrite later?)                | ⏳     |                                                                                                                                                                                                                                                                                                             |
+| `features/request-lists`, `partners`, `access-notifications`, `dataroom-analytics`                                                                                                   | stub                                 | ⏳     | Feature-flag hooks return `false`, components render `null`                                                                                                                                                                                                                                                 |
+| `features/ai`, `conversations`, `workflows`, `dataroom-freeze`, `templates`, `redaction`                                                                                             | drop                                 | ⏳     | UI stubs render `null`; delete their pages and routes                                                                                                                                                                                                                                                       |
+| AGPL-side gaps: `lib/api/errors`, `lib/dataroom/apply-default-permissions`, `lib/api/auth/restricted-tokens`, `lib/oauth/scopes`, `lib/dataroom/index-generator#DataroomIndexSource` | real                                 | ⏳     | Missing from upstream's public repo                                                                                                                                                                                                                                                                         |
 
 ## Progress check
 
 ```sh
-npx tsc --noEmit | grep -c "error TS"          # 380 at fork point, 247 after stripe/limits
+npx tsc --noEmit | grep -c "error TS"          # 380 at fork point, 247 after stripe/limits, 210 after billing/storage/rate-limit
 npx tsc --noEmit | grep -oE "Cannot find module '@/ee/[^']+'" | sort -u
 ```
 
@@ -51,13 +51,13 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/billing
 
-- `features/billing/cancellation/api/automatic-unpause-route`: `handleRoute` (1)
-- `features/billing/cancellation/api/send-pause-resume-notification`: `(re-export)` (1)
-- `features/billing/cancellation/components`: `CancellationModal` (1)
-- `features/billing/cancellation/lib/is-team-paused`: `isTeamPaused` (1), `isTeamPausedById` (20)
-- `features/billing/cancellation/lib/trigger/pause-resume-notification`: `sendPauseResumeNotificationTask` (1)
-- `features/billing/cancellation/lib/trigger/unpause-task`: `automaticUnpauseTask` (1)
-- `features/billing/dataroom-trial/lib/trigger/send-scheduled-email`: `sendDataroomTrial24hReminderEmailTask` (1), `sendDataroomTrialExpiredEmailTask` (1), `sendDataroomTrialInfoEmailTask` (1)
+- ✅ `features/billing/cancellation/api/automatic-unpause-route`: `handleRoute` (1)
+- ✅ `features/billing/cancellation/api/send-pause-resume-notification`: `(re-export)` (1)
+- ✅ `features/billing/cancellation/components`: `CancellationModal` (1)
+- ✅ `features/billing/cancellation/lib/is-team-paused`: `isTeamPaused` (1), `isTeamPausedById` (20)
+- ✅ `features/billing/cancellation/lib/trigger/pause-resume-notification`: `sendPauseResumeNotificationTask` (1)
+- ✅ `features/billing/cancellation/lib/trigger/unpause-task`: `automaticUnpauseTask` (1)
+- ✅ `features/billing/dataroom-trial/lib/trigger/send-scheduled-email`: `sendDataroomTrial24hReminderEmailTask` (1), `sendDataroomTrialExpiredEmailTask` (1), `sendDataroomTrialInfoEmailTask` (1)
 
 ### features/branding
 
@@ -154,14 +154,14 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/security
 
-- `features/security`: `checkRateLimit` (3), `rateLimiters` (3)
+- ✅ `features/security`: `checkRateLimit` (3), `rateLimiters` (3)
 - `features/security/sso`: `DirectorySyncConfigModal` (1), `SAMLConfigModal` (1), `SSOEnforcementToggle` (1), `SSOLogin` (1)
 - `features/security/sso/product`: `(re-export)` (1)
 
 ### features/storage
 
-- `features/storage/config`: `StorageConfig (type)` (2), `getStorageConfig` (1), `getTeamStorageConfigById` (5)
-- `features/storage/s3-store`: `MultiRegionS3Store` (2)
+- ✅ `features/storage/config`: `StorageConfig (type)` (2), `getStorageConfig` (1), `getTeamStorageConfigById` (5)
+- ✅ `features/storage/s3-store`: `MultiRegionS3Store` (2)
 
 ### features/templates
 
