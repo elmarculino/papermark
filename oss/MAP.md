@@ -30,6 +30,7 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 - Upstream routes not in the public repo: `/api/branding/auto-fill`, `/api/geo/currency`, `/api/teams/:id/billing/currency` (404s; billing UI only).
 - Upstream analytics: `/api/record_view` needs Tinybird; view tracking fails without it.
 - Bulk ZIP download needs AWS Lambda.
+- Confidential view: upstream's Notion viewer (`components/view/viewer/notion-page.tsx`) imports the overlay but never renders it; in the HTML viewer (behind the `htmlDocuments` flag) the spotlight can't follow the pointer inside the sandboxed iframe, so the page stays blurred.
 - `tsc` needs `next-env.d.ts` (created by `next dev`/`next build`; gitignored).
 
 ## Progress check

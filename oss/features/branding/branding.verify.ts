@@ -157,6 +157,42 @@ function pureChecks() {
     "no preview configured",
   );
 
+  // Data-room preview: empty fields fall back to the team preview only when it's enabled too.
+  const mergedMeta = resolvePublicLinkMeta({
+    link,
+    teamBrand: {
+      customLinkPreviewEnabled: true,
+      linkPreviewTitle: "Team",
+      linkPreviewImage: "team.png",
+    },
+    dataroomBrand: { customLinkPreviewEnabled: true, linkPreviewTitle: "Room" },
+    defaultTitle: "Default",
+  });
+  assert(
+    mergedMeta.metaTitle === "Room" && mergedMeta.metaImage === "team.png",
+    `room fields win, empty ones fall back: ${JSON.stringify(mergedMeta)}`,
+  );
+  const teamOff = resolvePublicLinkMeta({
+    link,
+    teamBrand: {
+      customLinkPreviewEnabled: false,
+      linkPreviewImage: "team.png",
+    },
+    dataroomBrand: { customLinkPreviewEnabled: true, linkPreviewTitle: "Room" },
+    defaultTitle: "Default",
+  });
+  assert(
+    teamOff.metaImage === null,
+    "no fallback from a disabled team preview",
+  );
+  const roomOff = resolvePublicLinkMeta({
+    link,
+    teamBrand: { customLinkPreviewEnabled: true, linkPreviewTitle: "Team" },
+    dataroomBrand: { customLinkPreviewEnabled: false },
+    defaultTitle: "Default",
+  });
+  assert(!roomOff.enableCustomMetatag, "a disabled room preview stays off");
+
   assert(
     nextTeamBrandName([{ name: "Default" }]) === "Brand 2",
     "next brand name",
