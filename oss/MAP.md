@@ -16,19 +16,19 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 | `stripe/*`, `limits/*`                                                                                                                                                               | stub                                 | ✅     | Every new team gets the `datarooms-unlimited` plan (via `canCreateUnlimitedTeam → true`). Numeric limits are `Infinity`. Kept as an interface for possible SaaS work later.                                                                                                                                 |
 | `features/billing`                                                                                                                                                                   | stub                                 | ✅     | `isTeamPaused*` → `false`; trial and pause Trigger.dev tasks are no-ops; pause/unpause API routes return 404; `CancellationModal` renders nothing                                                                                                                                                           |
 | `features/storage`                                                                                                                                                                   | real                                 | ✅     | Env-driven S3 config with a single region, plus a tus `S3Store`. New env: `NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE` (MinIO/Garage), `NEXT_PRIVATE_ADVANCED_UPLOAD_BUCKET`, `NEXT_PRIVATE_DOWNLOAD_LAMBDA_FUNCTION_NAME`. **Bulk ZIP download still needs AWS Lambda** and has to be replaced to run elsewhere. |
-| `features/security`                                                                                                                                                                  | real (rate limit) + drop (SAML/SCIM) | ◐      | ✅ `checkRateLimit`/`rateLimiters` on `lib/redis` `ratelimit()`, failing open if Redis is down. ⏳ SAML/SCIM drop (`security/sso`)                                                                                                                                                                          |
+| `features/security`                                                                                                                                                                  | real (rate limit) + drop (SAML/SCIM) | ✅     | `checkRateLimit`/`rateLimiters` on `lib/redis` `ratelimit()`, failing open if Redis is down. SSO components render nothing; `JACKSON_PRODUCT` constant kept for `lib/jackson.ts`                                                                                                                            |
 | `features/branding`                                                                                                                                                                  | real (minimal)                       | ⏳     | Not public upstream. 29 importers. Logo + colors; advanced layout options as stubs                                                                                                                                                                                                                          |
 | `features/permissions`                                                                                                                                                               | real                                 | ⏳     | Per-item data-room permissions, confidential view                                                                                                                                                                                                                                                           |
 | `features/conversions`                                                                                                                                                               | real                                 | ⏳     | Office/Keynote → PDF via Gotenberg                                                                                                                                                                                                                                                                          |
 | `features/dataroom-invitations`                                                                                                                                                      | stub (rewrite later?)                | ⏳     |                                                                                                                                                                                                                                                                                                             |
 | `features/request-lists`, `partners`, `access-notifications`, `dataroom-analytics`                                                                                                   | stub                                 | ⏳     | Feature-flag hooks return `false`, components render `null`                                                                                                                                                                                                                                                 |
-| `features/ai`, `conversations`, `workflows`, `dataroom-freeze`, `templates`, `redaction`                                                                                             | drop                                 | ⏳     | UI stubs render `null`; delete their pages and routes                                                                                                                                                                                                                                                       |
+| `features/ai`, `conversations`, `workflows`, `dataroom-freeze`, `templates`, `redaction`                                                                                             | drop                                 | ✅     | Providers and layouts pass children through; buttons, dialogs and panels render nothing; pages show "not available"; API routes 404; Trigger.dev tasks are no-ops with `oss-noop-*` IDs. Templates: `FolderTemplate` type plus our own prompts, so the AGPL AI-structure route still works                  |
 | AGPL-side gaps: `lib/api/errors`, `lib/dataroom/apply-default-permissions`, `lib/api/auth/restricted-tokens`, `lib/oauth/scopes`, `lib/dataroom/index-generator#DataroomIndexSource` | real                                 | ⏳     | Missing from upstream's public repo                                                                                                                                                                                                                                                                         |
 
 ## Progress check
 
 ```sh
-npx tsc --noEmit | grep -c "error TS"          # 380 at fork point, 247 after stripe/limits, 210 after billing/storage/rate-limit
+npx tsc --noEmit | grep -c "error TS"          # 380 at fork point, 247 after stripe/limits, 210 after billing/storage/rate-limit, 158 after the drop stubs
 npx tsc --noEmit | grep -oE "Cannot find module '@/ee/[^']+'" | sort -u
 ```
 
@@ -42,12 +42,12 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/ai
 
-- `features/ai/components/agents-settings-card`: `AgentsSettingsCard` (1)
-- `features/ai/components/document-ai-dialog`: `DocumentAIDialog` (1)
-- `features/ai/components/viewer-chat-panel`: `ViewerChatPanel` (2)
-- `features/ai/components/viewer-chat-provider`: `ViewerChatLayout` (2), `ViewerChatProvider` (2), `useViewerChatSafe` (2)
-- `features/ai/components/viewer-chat-toggle`: `ViewerChatToggle` (2)
-- `features/ai/lib/trigger`: `SUPPORTED_AI_CONTENT_TYPES` (2), `addFileToVectorStoreTask` (2), `processDocumentForAITask` (2)
+- ✅ `features/ai/components/agents-settings-card`: `AgentsSettingsCard` (1)
+- ✅ `features/ai/components/document-ai-dialog`: `DocumentAIDialog` (1)
+- ✅ `features/ai/components/viewer-chat-panel`: `ViewerChatPanel` (2)
+- ✅ `features/ai/components/viewer-chat-provider`: `ViewerChatLayout` (2), `ViewerChatProvider` (2), `useViewerChatSafe` (2)
+- ✅ `features/ai/components/viewer-chat-toggle`: `ViewerChatToggle` (2)
+- ✅ `features/ai/lib/trigger`: `SUPPORTED_AI_CONTENT_TYPES` (2), `addFileToVectorStoreTask` (2), `processDocumentForAITask` (2)
 
 ### features/billing
 
@@ -85,20 +85,20 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/conversations
 
-- `features/conversations/api/conversations-route`: `handleRoute` (1)
-- `features/conversations/api/send-conversation-mention-notification`: `(re-export)` (1)
-- `features/conversations/api/send-conversation-new-message-notification`: `default` (1)
-- `features/conversations/api/send-conversation-team-member-notification`: `(re-export)` (1)
-- `features/conversations/api/team-conversations-route`: `handleRoute` (1)
-- `features/conversations/api/team-faqs-route`: `default` (2)
-- `features/conversations/api/team-questions-route`: `handleRoute` (1)
-- `features/conversations/api/toggle-conversations-route`: `default` (1)
-- `features/conversations/components/dashboard/link-option-conversation-section`: `default` (1)
-- `features/conversations/components/viewer/conversation-sidebar-provider`: `ConversationSidebarLayout` (2), `ConversationSidebarProvider` (2), `useConversationSidebarSafe` (2)
-- `features/conversations/components/viewer/conversation-view-sidebar`: `ConversationSidebarProps` (1), `ConversationViewSidebar` (1)
-- `features/conversations/lib/trigger/conversation-message-notification`: `sendConversationMentionNotificationTask` (1), `sendConversationMessageNotificationTask` (1), `sendConversationTeamMemberNotificationTask` (1)
-- `features/conversations/pages/conversation-overview`: `default` (2)
-- `features/conversations/pages/faq-overview`: `(re-export)` (1)
+- ✅ `features/conversations/api/conversations-route`: `handleRoute` (1)
+- ✅ `features/conversations/api/send-conversation-mention-notification`: `(re-export)` (1)
+- ✅ `features/conversations/api/send-conversation-new-message-notification`: `default` (1)
+- ✅ `features/conversations/api/send-conversation-team-member-notification`: `(re-export)` (1)
+- ✅ `features/conversations/api/team-conversations-route`: `handleRoute` (1)
+- ✅ `features/conversations/api/team-faqs-route`: `default` (2)
+- ✅ `features/conversations/api/team-questions-route`: `handleRoute` (1)
+- ✅ `features/conversations/api/toggle-conversations-route`: `default` (1)
+- ✅ `features/conversations/components/dashboard/link-option-conversation-section`: `default` (1)
+- ✅ `features/conversations/components/viewer/conversation-sidebar-provider`: `ConversationSidebarLayout` (2), `ConversationSidebarProvider` (2), `useConversationSidebarSafe` (2)
+- ✅ `features/conversations/components/viewer/conversation-view-sidebar`: `ConversationSidebarProps` (1), `ConversationViewSidebar` (1)
+- ✅ `features/conversations/lib/trigger/conversation-message-notification`: `sendConversationMentionNotificationTask` (1), `sendConversationMessageNotificationTask` (1), `sendConversationTeamMemberNotificationTask` (1)
+- ✅ `features/conversations/pages/conversation-overview`: `default` (2)
+- ✅ `features/conversations/pages/faq-overview`: `(re-export)` (1)
 
 ### features/conversions
 
@@ -110,8 +110,8 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/dataroom-freeze
 
-- `features/dataroom-freeze/components/freeze-settings`: `default` (1)
-- `features/dataroom-freeze/lib/swr/use-freeze-progress`: `useFreezeProgress` (1)
+- ✅ `features/dataroom-freeze/components/freeze-settings`: `default` (1)
+- ✅ `features/dataroom-freeze/lib/swr/use-freeze-progress`: `useFreezeProgress` (1)
 
 ### features/dataroom-invitations
 
@@ -136,10 +136,10 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/redaction
 
-- `features/redaction/components/redaction-config-dialog`: `(dynamic import)` (1)
-- `features/redaction/components/redaction-jobs-dialog`: `(dynamic import)` (1)
-- `features/redaction/components/redaction-launcher`: `RedactionLauncher` (1)
-- `features/redaction/components/redaction-workspace`: `RedactionWorkspace` (1)
+- ✅ `features/redaction/components/redaction-config-dialog`: `(dynamic import)` (1)
+- ✅ `features/redaction/components/redaction-jobs-dialog`: `(dynamic import)` (1)
+- ✅ `features/redaction/components/redaction-launcher`: `RedactionLauncher` (1)
+- ✅ `features/redaction/components/redaction-workspace`: `RedactionWorkspace` (1)
 
 ### features/request-lists
 
@@ -155,8 +155,8 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 ### features/security
 
 - ✅ `features/security`: `checkRateLimit` (3), `rateLimiters` (3)
-- `features/security/sso`: `DirectorySyncConfigModal` (1), `SAMLConfigModal` (1), `SSOEnforcementToggle` (1), `SSOLogin` (1)
-- `features/security/sso/product`: `(re-export)` (1)
+- ✅ `features/security/sso`: `DirectorySyncConfigModal` (1), `SAMLConfigModal` (1), `SSOEnforcementToggle` (1), `SSOLogin` (1)
+- ✅ `features/security/sso/product`: `(re-export)` (1)
 
 ### features/storage
 
@@ -165,18 +165,18 @@ Generated with the TypeScript compiler API at upstream `ed19717`. Shows `module`
 
 ### features/templates
 
-- `features/templates/api/datarooms/apply-template`: `(re-export)` (1)
-- `features/templates/api/datarooms/generate`: `(re-export)` (1)
-- `features/templates/components/dataroom-templates`: `default` (1)
-- `features/templates/constants/dataroom-templates`: `FolderTemplate` (1)
-- `features/templates/lib/prompts`: `getDataroomSystemPrompt` (1), `getDataroomUserPrompt` (1)
+- ✅ `features/templates/api/datarooms/apply-template`: `(re-export)` (1)
+- ✅ `features/templates/api/datarooms/generate`: `(re-export)` (1)
+- ✅ `features/templates/components/dataroom-templates`: `default` (1)
+- ✅ `features/templates/constants/dataroom-templates`: `FolderTemplate` (1)
+- ✅ `features/templates/lib/prompts`: `getDataroomSystemPrompt` (1), `getDataroomUserPrompt` (1)
 
 ### features/workflows
 
-- `features/workflows/components/workflow-access-view`: `default` (2)
-- `features/workflows/pages/workflow-detail`: `default` (1)
-- `features/workflows/pages/workflow-new`: `default` (1)
-- `features/workflows/pages/workflow-overview`: `default` (1)
+- ✅ `features/workflows/components/workflow-access-view`: `default` (2)
+- ✅ `features/workflows/pages/workflow-detail`: `default` (1)
+- ✅ `features/workflows/pages/workflow-new`: `default` (1)
+- ✅ `features/workflows/pages/workflow-overview`: `default` (1)
 
 ### limits
 

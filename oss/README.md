@@ -17,3 +17,19 @@ Every hit is a new `@/ee/…` path or export we need to provide (stub or real co
 ## Module status
 
 See [MAP.md](./MAP.md).
+
+## Verify scripts
+
+Runtime checks next to the code they test (`*.verify.ts[x]`, the repo's existing convention). Each prints `<name>: ok` or exits non-zero.
+
+```sh
+TSX="npx tsx --tsconfig oss/tsconfig.verify.json"
+$TSX oss/_shared/stubs.verify.tsx                       # no services needed
+POSTGRES_PRISMA_URL=... $TSX oss/limits/limits.verify.ts  # migrated Postgres
+UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... $TSX oss/features/security/rate-limit.verify.ts
+NEXT_PUBLIC_UPLOAD_TRANSPORT=s3 NEXT_PRIVATE_UPLOAD_ENDPOINT=... NEXT_PRIVATE_UPLOAD_BUCKET=... \
+  NEXT_PRIVATE_UPLOAD_ACCESS_KEY_ID=... NEXT_PRIVATE_UPLOAD_SECRET_ACCESS_KEY=... \
+  NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE=true $TSX oss/features/storage/storage.verify.ts
+```
+
+For local services: `postgres:16-alpine` + `npx prisma migrate deploy`; any S3-compatible server (e.g. `chrislusf/seaweedfs server -s3`); `redis` behind `hiett/serverless-redis-http` for the Upstash REST API.
