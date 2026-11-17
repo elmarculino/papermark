@@ -26,6 +26,11 @@ Runtime checks next to the code they test (`*.verify.ts[x]`, the repo's existing
 TSX="npx tsx --tsconfig oss/tsconfig.verify.json"
 $TSX oss/_shared/stubs.verify.tsx                       # no services needed
 $TSX oss/_shared/unavailable-pages.verify.tsx           # no services needed
+POSTGRES_PRISMA_URL=... UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... \
+  $TSX oss/features/branding/branding.verify.ts          # migrated Postgres + Redis REST
+POSTGRES_PRISMA_URL=... $TSX oss/upstream-gaps.verify.ts  # migrated Postgres
+GOTENBERG_URL=... POSTGRES_PRISMA_URL=... NEXT_PRIVATE_UPLOAD_...=... \
+  $TSX oss/features/conversions/conversions.verify.ts file.docx  # + gotenberg/gotenberg:8
 POSTGRES_PRISMA_URL=... NEXTAUTH_SECRET=x HANKO_API_KEY=x NEXT_PUBLIC_HANKO_TENANT_ID=x \
   $TSX oss/limits/limits.verify.ts                       # migrated Postgres + `prisma generate`
 UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... $TSX oss/features/security/rate-limit.verify.ts

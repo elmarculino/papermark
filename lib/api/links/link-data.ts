@@ -869,7 +869,8 @@ async function processLinkData(
         metaImage: link.metaImage,
         metaFavicon: link.metaFavicon,
       },
-      teamBrand: inheritTeamBrand ? teamBrandLp : null,
+      // [fork] always pass the team preview: empty data-room fields fall back to it
+      teamBrand: teamBrandLp,
       dataroomBrand: inheritTeamBrand ? null : dataroomBrandLp,
       defaultTitle,
     });
