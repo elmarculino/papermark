@@ -16,6 +16,4 @@ Every hit is a new `@/ee/…` path or export we need to provide (stub or real co
 
 ## Module status
 
-| Path | Kind |
-|---|---|
-| `stripe/`, `limits/` | Stub. Every team is on the top plan with no limits. Kept as an interface in case of future SaaS work. |
+See [MAP.md](./MAP.md).
