@@ -41,6 +41,14 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 4. Tinybird → plain ClickHouse: 5 tables from `lib/tinybird/datasources`, 15 queries from `lib/tinybird/endpoints`, swap `publish.ts`/`pipes.ts`. Don't use Tinybird Local (proprietary TSML license, production use only within Tinybird's usage limits).
 5. Email templates: replace Papermark, Inc. branding/address in `components/emails`.
 
+## Option: a lighter replacement for Trigger.dev
+
+Self-hosted Trigger.dev is 7+ containers (webapp, Postgres, Redis, ClickHouse, Electric, MinIO, S2) plus a worker and an image registry; their guidance is ~3 vCPU/6 GB for the webapp and ~4 vCPU/8 GB for the worker. If the server can't spare that:
+
+- **What a replacement must cover** (what the 29 importing files use): `task`/`schemaTask`, `.trigger()` (22 call sites), `triggerAndWait`, `batchTrigger`, `tasks.trigger` by id, delays up to 7 days (`delay: "1d"|"6d"|"7d"`), retries, idempotency keys, per-team `concurrencyKey` and named queues, `schedules` (cron), `logger`, `AbortTaskRunError`, run `metadata` (progress), `runs.*`, `auth` public tokens, and the React hooks `useRealtimeRun` / `useRealtimeRunsWithTag` (upload progress in the UI).
+- **Plan:** an `@trigger.dev/sdk` compatibility layer in `oss/` (mapped like `@/ee/*`, so call sites stay unchanged), backed by **BullMQ** (the Redis we already run) or **pg-boss** (Postgres), with one worker container running the same task files. Queueing, delays, retries, idempotency and cron map directly; realtime progress needs a small SSE/polling endpoint plus hooks with the same names. Roughly a few days.
+- **Not a fit:** SQS is only a queue (an AWS service; delay max 15 min, no worker runtime). Cloudflare Workflows is durable execution but managed only. Its self-hostable pieces (`workerd`, Deno's `celld`) run Workers code, but Papermark's tasks need Node APIs, Prisma, mupdf, ffmpeg and Python, which don't run there.
+
 ## Progress check
 
 ```sh
