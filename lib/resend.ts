@@ -25,8 +25,6 @@ const smtp = process.env.SMTP_HOST
     })
   : null;
 
-export const isSmtpEnabled = () => !!smtp;
-
 export const sendEmail = async ({
   to,
   subject,
