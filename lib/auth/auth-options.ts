@@ -246,6 +246,10 @@ export const authOptions: NextAuthOptions = {
         userId: message.user.id,
       });
 
+      // [fork] The delayed welcome mail goes through Upstash QStash. A
+      // self-host has no QStash token, and a failed publish here aborts the
+      // first sign-in, so skip it.
+      if (!process.env.QSTASH_TOKEN) return;
       await qstash.publishJSON({
         url: `${process.env.NEXT_PUBLIC_BASE_URL ?? getMainDomainUrl()}/api/cron/welcome-user`,
         body: {
