@@ -103,7 +103,11 @@ export default async function handle(
       }
 
       // Check if domain contains papermark
-      if (sanitizedDomain.toLowerCase().includes("papermark")) {
+      // [fork] only on papermark.com's hosted service (a Vercel project)
+      if (
+        process.env.PROJECT_ID_VERCEL &&
+        sanitizedDomain.toLowerCase().includes("papermark")
+      ) {
         return res
           .status(400)
           .json({ message: "Domain cannot contain 'papermark'" });

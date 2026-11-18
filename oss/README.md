@@ -45,6 +45,40 @@ npx next dev                           # terminal 2 (JOBS_BACKEND defaults to db
 JOBS_BACKEND=trigger npx next dev      # upstream behaviour, with npx trigger.dev dev
 ```
 
+## Custom link domains
+
+Without a Vercel project (`PROJECT_ID_VERCEL` unset), teams' custom link domains are served by this install (`oss/domains/self-host.ts`). The app checks the domain's DNS against the install's target and shows the records to create:
+
+- `CUSTOM_DOMAIN_TARGET_CNAME`: the hostname a CNAME should point to (blank = the public link host from `NEXT_PUBLIC_MARKETING_URL`).
+- `CUSTOM_DOMAIN_TARGET_IPS`: the public IPv4 address(es) an A record may point to, comma-separated (blank = what the CNAME target resolves to).
+
+Certificates come from the reverse proxy. With Caddy, on-demand TLS asks the app before requesting a certificate, so only domains a team has added and verified get one:
+
+```caddyfile
+{
+  on_demand_tls {
+    ask http://papermark:3000/api/domains/caddy-ask
+  }
+}
+
+# The app's own hostname: a normal certificate, not on demand.
+papermark.example.com {
+  reverse_proxy papermark:3000
+}
+
+# Every other name: customers' link domains.
+https:// {
+  tls {
+    on_demand
+  }
+  reverse_proxy papermark:3000
+}
+```
+
+Adding a domain shows two records to create: the CNAME (or A record) pointing at the install and a TXT record `_papermark-verify.<domain>` that proves the team controls the domain's DNS. The domain is used, and gets a certificate, only once both are in place. Behind a shared proxy or CDN set `CUSTOM_DOMAIN_TARGET_IPS` explicitly; the default (what the CNAME target resolves to) would then match names that don't reach this install.
+
+The server must be reachable from the internet on ports 80 and 443 for Let's Encrypt to issue certificates.
+
 ## Verify scripts
 
 Runtime checks next to the code they test (`*.verify.ts[x]`, the repo's existing convention). Each prints `<name>: ok` or exits non-zero.

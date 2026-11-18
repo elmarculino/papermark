@@ -62,7 +62,8 @@ export default async function handle(
     if (
       !sanitizedDomain ||
       !validDomainRegex.test(sanitizedDomain) ||
-      sanitizedDomain.includes("papermark")
+      // [fork] only on papermark.com's hosted service (a Vercel project)
+      (process.env.PROJECT_ID_VERCEL && sanitizedDomain.includes("papermark"))
     ) {
       return res.status(200).json({
         status: "invalid" as DomainValidationStatus,
