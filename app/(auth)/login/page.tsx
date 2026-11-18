@@ -1,5 +1,7 @@
 import { Metadata } from "next";
 
+import { getLoginMethods } from "@/ee/_shared/login-methods";
+
 import { GTMComponent } from "@/components/gtm-component";
 
 import LoginClient from "./page-client";
@@ -9,6 +11,9 @@ const data = {
   title: "Login | Papermark",
   url: "/login",
 };
+
+// [fork] Read the sign-in providers from the runtime env, not at build time.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.papermark.com"),
@@ -42,7 +47,7 @@ export default function LoginPage() {
   return (
     <>
       <GTMComponent />
-      <LoginClient />
+      <LoginClient methods={getLoginMethods()} />
     </>
   );
 }

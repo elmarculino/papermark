@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { useState } from "react";
 
+import type { LoginMethods } from "@/ee/_shared/login-methods";
 import { SSOLogin } from "@/ee/features/security/sso";
 import { signInWithPasskey } from "@teamhanko/passkeys-next-auth-provider/client";
 import { AlertCircle } from "lucide-react";
@@ -23,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function Login() {
+export default function Login({ methods }: { methods: LoginMethods }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams?.get("next") ?? undefined;
@@ -157,8 +158,12 @@ export default function Login() {
               {lastUsed === "credentials" && <LastUsed />}
             </div>
           </form>
-          <p className="py-4 text-center">or</p>
+          {/* [fork] only configured providers */}
+          {(methods.google || methods.linkedin || methods.passkey) && (
+            <p className="py-4 text-center">or</p>
+          )}
           <div className="flex flex-col space-y-2 px-4 sm:px-12">
+            {methods.google && (
             <div className="relative">
               <Button
                 onClick={() => {
@@ -181,6 +186,8 @@ export default function Login() {
                 )}
               </Button>
             </div>
+            )}
+            {methods.linkedin && (
             <div className="relative">
               <Button
                 onClick={() => {
@@ -203,13 +210,16 @@ export default function Login() {
                 )}
               </Button>
             </div>
+            )}
+            {methods.passkey && (
             <div className="relative">
               <Button
                 onClick={() => {
                   setLastUsed("passkey");
                   setClickedMethod("passkey");
                   signInWithPasskey({
-                    tenantId: process.env.NEXT_PUBLIC_HANKO_TENANT_ID as string,
+                    // [fork] the tenant the server checked (oss/_shared/login-methods)
+                    tenantId: methods.hankoTenantId as string,
                   }).then(() => {
                     setClickedMethod(undefined);
                   });
@@ -224,6 +234,7 @@ export default function Login() {
                 {lastUsed === "passkey" && <LastUsed />}
               </Button>
             </div>
+            )}
             <div className="relative">
               <SSOLogin autoExpand={isSSORequired} />
             </div>

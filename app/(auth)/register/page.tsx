@@ -1,5 +1,7 @@
 import { Metadata } from "next";
 
+import { getLoginMethods } from "@/ee/_shared/login-methods";
+
 import RegisterClient from "./page-client";
 
 const data = {
@@ -7,6 +9,9 @@ const data = {
   title: "Sign up | Papermark",
   url: "/register",
 };
+
+// [fork] Read the sign-in providers from the runtime env, not at build time.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.papermark.com"),
@@ -37,5 +42,5 @@ export const metadata: Metadata = {
 };
 
 export default function RegisterPage() {
-  return <RegisterClient />;
+  return <RegisterClient methods={getLoginMethods()} />;
 }
