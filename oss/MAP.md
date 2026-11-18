@@ -36,15 +36,15 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 - Jobs, legacy `trial` plan: upstream declares no `conversion-trial` queue, so a team on the legacy `trial` base plan gets `Unknown queue` when it converts Office/Keynote files under the DBOS backend (the layer rejects queue names that no task file declares).
 - Jobs, removed cron tasks: the worker creates or updates a DBOS schedule for every cron task it finds, but never deletes one. After a cron task disappears upstream, delete its schedule by hand with the DBOS client (`DBOSClient.deleteSchedule`).
 - Jobs, v1 limits: see "Jobs: DBOS layer, done" below (replayed side effects, one worker, no dashboard).
-- Presigned single-PUT uploads to SeaweedFS fail with `BadDigest`: the AWS SDK signs a `x-amz-checksum-crc32` into the URL. Document uploads go through tus and are fine; the signing-agreement PDF upload (`lib/files/put-file.ts`) is affected. Not a jobs issue.
+- ✅ Fixed: presigned single-PUT uploads to SeaweedFS failed with `BadDigest` (the AWS SDK signed a `x-amz-checksum-crc32` into the URL); `lib/files/aws-client.ts` now computes request checksums only when required.
 
 ## Queue (production readiness)
 
 1. ✅ Email over SMTP (`lib/resend.ts`, `SMTP_*` / `EMAIL_FROM`).
 2. ✅ Dockerfile (one image for app, jobs worker and migrations; build-time settings as a BuildKit secret). First install: old-elgin at `papermark.apto` (compose in `elmarculino/home-stacks`, `papermark/`). A Komodo stack for a dedicated server is still to do. Fixed on the way: the middleware treated the self-hosted host as a custom domain (`NEXT_PUBLIC_APP_BASE_HOST` is now an app host); the first sign-in failed without a QStash token (welcome mail skipped); on https the session cookie name didn't match what the middleware reads (`__Secure-` now follows `NEXTAUTH_URL`).
-3. Feature flags from env instead of Vercel Edge Config.
+3. ✅ Feature flags from env instead of Vercel Edge Config (`FEATURE_FLAGS`).
 4. Tinybird → plain ClickHouse: 5 tables from `lib/tinybird/datasources`, 15 queries from `lib/tinybird/endpoints`, swap `publish.ts`/`pipes.ts`. Don't use Tinybird Local (proprietary TSML license, production use only within Tinybird's usage limits).
-5. Email templates: replace Papermark, Inc. branding/address in `components/emails`.
+5. ◐ Email templates: footers name the install's company (`EMAIL_COMPANY_NAME`/`EMAIL_COMPANY_ADDRESS`); Papermark links and wording inside the templates remain.
 6. Passkeys without Hanko: replace `lib/hanko.ts`, `lib/api/auth/passkey.ts` and the Hanko NextAuth provider with SimpleWebAuthn (MIT): a passkey table, challenges in Redis, a `passkey` credentials provider. Needs https with a certificate the device trusts.
 
 ## Jobs: DBOS layer, done
