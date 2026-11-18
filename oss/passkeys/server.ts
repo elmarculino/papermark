@@ -39,9 +39,11 @@ function relyingParty() {
 
 async function sessionUserId(session: Session): Promise<string> {
   if (!session) throw new Error("Not logged in");
-  const email = (session.user as CustomUser).email;
+  // The database id, not the email: a session can outlive an email change.
+  const id = (session.user as CustomUser).id;
+  if (!id) throw new Error("Not logged in");
   const user = await prisma.user.findUnique({
-    where: { email: email as string },
+    where: { id },
     select: { id: true },
   });
   if (!user) throw new Error("User not found");
@@ -208,12 +210,15 @@ export async function verifyPasskeyLogin({
     },
   });
   if (!verified) return null;
-  await prisma.passkeyCredential.update({
-    where: { id: stored.id },
+  // Compare-and-set: of two overlapping sign-ins with the same counter, only
+  // one may succeed (and the counter never moves backwards).
+  const { count } = await prisma.passkeyCredential.updateMany({
+    where: { id: stored.id, counter: stored.counter },
     data: {
       counter: BigInt(authenticationInfo.newCounter),
       lastUsedAt: new Date(),
     },
   });
+  if (count !== 1) return null;
   return stored.userId;
 }

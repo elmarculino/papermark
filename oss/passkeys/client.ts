@@ -13,9 +13,16 @@ export async function signInWithPasskey({
   if (!res.ok) throw new Error("Could not start passkey sign-in");
   const { challengeId, options } = await res.json();
   const credential = await get(options);
-  return signIn("passkey", {
+  // redirect: false so a refused passkey surfaces as an error (the login
+  // page doesn't render ?error=CredentialsSignin).
+  const result = await signIn("passkey", {
     challengeId,
     response: JSON.stringify(credential),
+    redirect: false,
     ...(callbackUrl ? { callbackUrl } : {}),
   });
+  if (!result?.ok || result.error) {
+    throw new Error("Passkey not accepted");
+  }
+  window.location.assign(result.url ?? callbackUrl ?? "/dashboard");
 }
