@@ -6,6 +6,8 @@
     "paths": {
       "@trigger.dev/sdk": ["../oss/jobs/sdk/index.ts"],
       "@trigger.dev/react-hooks": ["../oss/jobs/react-hooks/index.ts"],
+      "@vercel/blob": ["../oss/blob/server.ts"],
+      "@vercel/blob/client": ["../oss/blob/client.ts"],
       "@/ee/*": ["../oss/*"],
       "@/*": ["../*"]
     }
