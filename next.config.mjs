@@ -33,6 +33,13 @@ const forkAliases = {
     : {}),
 };
 
+// Node-free entry points for the browser build (client code imports
+// `getDownloadUrl` and `upload` from these packages).
+const browserForkAliases = {
+  "@vercel/blob": "./oss/blob/browser.ts",
+  "@vercel/blob/client": "./oss/blob/client-browser.ts",
+};
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -433,7 +440,13 @@ const nextConfig = {
       ...Object.fromEntries(
         Object.entries(forkAliases).map(([request, path]) => [
           `${request}$`,
-          fileURLToPath(new URL(path, import.meta.url)),
+          fileURLToPath(
+            new URL(
+              // Browser builds get Node-free entry points for the blob package.
+              (!isServer && browserForkAliases[request]) || path,
+              import.meta.url,
+            ),
+          ),
         ]),
       ),
     };
