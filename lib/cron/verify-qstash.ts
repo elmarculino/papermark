@@ -9,7 +9,9 @@ export const verifyQstashSignature = async ({
   rawBody: string; // Make sure to pass the raw body not the parsed JSON
 }) => {
   // skip verification in local development
-  if (process.env.VERCEL !== "1") {
+  // [fork] Upstream skipped it off Vercel, which left these routes open on a
+  // self-hosted production install; skip only in development.
+  if (process.env.NODE_ENV === "development") {
     return;
   }
 

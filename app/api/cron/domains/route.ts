@@ -23,7 +23,8 @@ export const maxDuration = 300; // 5 minutes in seconds
 
 export async function POST(req: Request) {
   const body = await req.json();
-  if (process.env.VERCEL === "1") {
+  // [fork] verify everywhere but development (was: only on Vercel)
+  if (process.env.NODE_ENV !== "development") {
     const isValid = await receiver.verify({
       signature: req.headers.get("Upstash-Signature") || "",
       body: JSON.stringify(body),
