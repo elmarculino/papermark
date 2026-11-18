@@ -17,15 +17,29 @@ async function main() {
   const { default: prisma } = await import("../../lib/prisma");
   const { default: ask } = await import("../../pages/api/domains/caddy-ask");
 
-  await check("no Vercel: add/get/verify answer locally", async () => {
+  const selfHost = await import("./self-host");
+
+  await check(
+    "zone apex follows the DNS zone, not the last two labels",
+    async () => {
+      assert(
+        (await selfHost.zoneApex("gist.github.com")) === "github.com",
+        "github.com",
+      );
+      assert(
+        (await selfHost.zoneApex("www.uol.com.br")) === "uol.com.br",
+        "uol.com.br",
+      );
+      assert(
+        (await selfHost.zoneApex("uol.com.br")) === "uol.com.br",
+        "apex itself",
+      );
+    },
+  );
+
+  await check("no Vercel: add and remove answer locally", async () => {
     const added = (await domains.addDomainToVercel("Links.Example.COM")) as any;
-    assert(added.name === "links.example.com" && added.verified, "add");
-    const got = await domains.getDomainResponse("links.example.com");
-    assert(got.verified && !got.error, "get: verified, no error");
-    assert(
-      (await domains.verifyDomain("links.example.com")).verified,
-      "verify",
-    );
+    assert(added.name === "links.example.com", "add");
     await domains.removeDomainFromVercelProject("links.example.com");
     await domains.removeDomainFromVercelTeam("links.example.com");
   });
@@ -80,6 +94,44 @@ async function main() {
     return status;
   };
   try {
+    await check(
+      "ownership: pending until the team's TXT token is published",
+      async () => {
+        const name = `own-${Date.now()}.example.com`;
+        await prisma.domain.create({ data: { slug: name, teamId: team.id } });
+        const pending = await domains.getDomainResponse(name);
+        const token = await selfHost.ownershipToken(team.id, name);
+        assert(!pending.verified && !pending.error, "pending, no error");
+        assert(
+          pending.verification[0]?.type === "TXT" &&
+            pending.verification[0].domain === `_papermark-verify.${name}` &&
+            pending.verification[0].value === token,
+          JSON.stringify(pending.verification),
+        );
+        assert(!(await domains.verifyDomain(name)).verified, "verify: not yet");
+        assert(
+          (await selfHost.ownershipToken("another-team", name)) !== token,
+          "token is per team",
+        );
+        // Publish the record (swap Node's resolver; the module loads it natively).
+        const dnsp = require("node:dns/promises");
+        const real = dnsp.resolveTxt;
+        dnsp.resolveTxt = async (q: string) =>
+          q === `_papermark-verify.${name}`
+            ? [[token.slice(0, 20), token.slice(20)]]
+            : real(q);
+        require("node:module").syncBuiltinESMExports();
+        try {
+          const done = await domains.getDomainResponse(name);
+          assert(done.verified && done.verification.length === 0, "verified");
+          assert((await domains.verifyDomain(name)).verified, "verify: yes");
+        } finally {
+          dnsp.resolveTxt = real;
+          require("node:module").syncBuiltinESMExports();
+        }
+      },
+    );
+
     await check(
       "caddy-ask: only verified domains get a certificate",
       async () => {

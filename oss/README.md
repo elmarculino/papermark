@@ -61,6 +61,12 @@ Certificates come from the reverse proxy. With Caddy, on-demand TLS asks the app
   }
 }
 
+# The app's own hostname: a normal certificate, not on demand.
+papermark.example.com {
+  reverse_proxy papermark:3000
+}
+
+# Every other name: customers' link domains.
 https:// {
   tls {
     on_demand
@@ -68,6 +74,8 @@ https:// {
   reverse_proxy papermark:3000
 }
 ```
+
+Adding a domain shows two records to create: the CNAME (or A record) pointing at the install and a TXT record `_papermark-verify.<domain>` that proves the team controls the domain's DNS. The domain is used, and gets a certificate, only once both are in place. Behind a shared proxy or CDN set `CUSTOM_DOMAIN_TARGET_IPS` explicitly; the default (what the CNAME target resolves to) would then match names that don't reach this install.
 
 The server must be reachable from the internet on ports 80 and 443 for Let's Encrypt to issue certificates.
 

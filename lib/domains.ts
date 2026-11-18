@@ -15,7 +15,7 @@ import {
 const selfHosted = () => !process.env.PROJECT_ID_VERCEL;
 
 export const addDomainToVercel = async (domain: string) => {
-  if (selfHosted()) return selfHostDomainResponse(domain); // [fork]
+  if (selfHosted()) return { name: domain.toLowerCase() }; // [fork]
   return await fetch(
     `https://api.vercel.com/v10/projects/${process.env.PROJECT_ID_VERCEL}/domains?teamId=${process.env.TEAM_ID_VERCEL}`,
     {
