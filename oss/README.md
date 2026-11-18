@@ -18,6 +18,30 @@ Every hit is a new `@/ee/…` path or export we need to provide (stub or real co
 
 See [MAP.md](./MAP.md).
 
+## Background jobs
+
+Upstream runs its background tasks (`lib/trigger/*`, conversions, notifications, signing setup, cron) on Trigger.dev. `oss/jobs/` is a drop-in replacement for `@trigger.dev/sdk` and `@trigger.dev/react-hooks`, backed by [DBOS](https://github.com/dbos-inc/dbos-transact-ts) on the app's own Postgres. The 29 upstream files that import `@trigger.dev/*` are unchanged.
+
+- **`JOBS_BACKEND`** = `dbos` (default) or `trigger`; any other value fails the build. It is **build-time**: `next.config.mjs` reads it and, for `dbos`, aliases `@trigger.dev/sdk` and `@trigger.dev/react-hooks` to `oss/jobs/`. Changing it means rebuilding the app (or restarting `next dev`). With `trigger`, the real SDK is used and nothing here runs; set `TRIGGER_SECRET_KEY` and run Trigger.dev's own worker as upstream does.
+- **Worker:** `npm run jobs:worker` (`tsx` over `oss/jobs/worker.ts`). It imports every task file, creates its schemas (`papermark_jobs` and `dbos`; override with `JOBS_SCHEMA` / `JOBS_DBOS_SCHEMA`), registers tasks and queues, applies the cron schedules, and then executes runs. Start it before the app triggers anything: until a worker has registered the tasks, `.trigger()` throws `Unknown task "<id>": start the jobs worker…`. One worker per database (see MAP.md, v1 limits). `Ctrl-C` stops it; runs that were executing resume when it starts again.
+- **Worker env** (it loads `.env*` like Next does, via `@next/env`):
+  - `POSTGRES_PRISMA_URL_NON_POOLING` (falls back to `POSTGRES_PRISMA_URL`; Prisma-only query params are stripped). Same database as the app.
+  - Storage: the `NEXT_PUBLIC_UPLOAD_TRANSPORT` / `NEXT_PRIVATE_UPLOAD_*` variables the app uses.
+  - `GOTENBERG_URL` (Office/Keynote → PDF).
+  - SMTP: `SMTP_*` / `EMAIL_FROM` (tasks that send email).
+  - `NEXT_PUBLIC_BASE_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `INTERNAL_API_KEY`, `REVALIDATE_TOKEN`.
+  - `JOBS_WORKER_CONCURRENCY`: max concurrent runs in this worker (default `4`, must be a positive integer).
+  - `ffmpeg` on `PATH` (video tasks).
+- **The app must be reachable from the worker.** Several tasks call back into the app over HTTP (`NEXT_PUBLIC_BASE_URL`/`NEXTAUTH_URL` + `INTERNAL_API_KEY`), e.g. PDF page rendering (`/api/mupdf/*`) and notification emails. In containers, point those URLs at an address the worker can resolve.
+- **Progress in the UI:** the hooks poll `GET /api/job-runs` every 1.5 s with an HMAC token (signed with `NEXTAUTH_SECRET`, 15-minute expiry), so the app needs no extra service.
+- **Failures** show up as one JSON line per failed run (after its last attempt) on the worker's stderr, `{"level":"error","event":"job.failed","taskId":…,"runId":…,"attempt":…,"error":…}` (the payload keeps only id fields such as `teamId`; other values are reduced to their type), and the run ends `FAILED` (or `CRASHED` after 3 recovery attempts). Run state lives in `dbos.workflow_status` and `papermark_jobs.runs`.
+
+```sh
+npm run jobs:worker                    # terminal 1: "jobs worker ready: N tasks, N queues, N schedules, concurrency 4"
+npx next dev                           # terminal 2 (JOBS_BACKEND defaults to dbos)
+JOBS_BACKEND=trigger npx next dev      # upstream behaviour, with npx trigger.dev dev
+```
+
 ## Verify scripts
 
 Runtime checks next to the code they test (`*.verify.ts[x]`, the repo's existing convention). Each prints `<name>: ok` or exits non-zero.
@@ -37,6 +61,13 @@ UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... $TSX oss/features/securi
 NEXT_PUBLIC_UPLOAD_TRANSPORT=s3 NEXT_PRIVATE_UPLOAD_ENDPOINT=... NEXT_PRIVATE_UPLOAD_BUCKET=... \
   NEXT_PRIVATE_UPLOAD_ACCESS_KEY_ID=... NEXT_PRIVATE_UPLOAD_SECRET_ACCESS_KEY=... \
   NEXT_PRIVATE_UPLOAD_FORCE_PATH_STYLE=true $TSX oss/features/storage/storage.verify.ts
+```
+
+Jobs layer (real Postgres, no DBOS mocks; each script uses its own schemas and drops them first; it reads `.env.local`):
+
+```sh
+for f in oss/jobs/*.verify.ts; do npx tsx --tsconfig oss/tsconfig.jobs.json "$f" || exit 1; done
+npx tsc -p oss/tsconfig.jobs.json --noEmit   # upstream call sites type-check against the layer
 ```
 
 For local services: `postgres:16-alpine` + `npx prisma migrate deploy`; any S3-compatible server (e.g. `chrislusf/seaweedfs server -s3`); `redis` behind `hiett/serverless-redis-http` for the Upstash REST API.
