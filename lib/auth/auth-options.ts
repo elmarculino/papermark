@@ -16,6 +16,10 @@ import prisma from "@/lib/prisma";
 import { CustomUser } from "@/lib/types";
 
 const VERCEL_DEPLOYMENT = !!process.env.VERCEL_URL;
+// [fork] next-auth's getToken (used by the middleware) expects the __Secure-
+// cookie whenever NEXTAUTH_URL is https, so a self-host on https must set it too.
+const SECURE_COOKIES =
+  VERCEL_DEPLOYMENT || !!process.env.NEXTAUTH_URL?.startsWith("https://");
 
 function getMainDomainUrl(): string {
   if (process.env.NODE_ENV === "development") {
@@ -182,13 +186,13 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   cookies: {
     sessionToken: {
-      name: `${VERCEL_DEPLOYMENT ? "__Secure-" : ""}next-auth.session-token`,
+      name: `${SECURE_COOKIES ? "__Secure-" : ""}next-auth.session-token`,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
         domain: VERCEL_DEPLOYMENT ? ".papermark.com" : undefined,
-        secure: VERCEL_DEPLOYMENT,
+        secure: SECURE_COOKIES,
       },
     },
   },
