@@ -4,7 +4,8 @@ import { pythonExtension } from "@trigger.dev/python/extension";
 import { defineConfig, timeout } from "@trigger.dev/sdk";
 
 export default defineConfig({
-  project: "proj_plmsfqvqunboixacjjus",
+  // [fork] self-hosted Trigger.dev: set TRIGGER_PROJECT_REF (upstream cloud ref as fallback)
+  project: process.env.TRIGGER_PROJECT_REF || "proj_plmsfqvqunboixacjjus",
   dirs: ["./lib/trigger", "./oss/**/lib/trigger"],
   maxDuration: timeout.None, // no max duration
   retries: {

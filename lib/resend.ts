@@ -1,5 +1,6 @@
 import { JSXElementConstructor, ReactElement } from "react";
 
+import nodemailer from "nodemailer";
 import { render, toPlainText } from "react-email";
 import { Resend } from "resend";
 
@@ -8,6 +9,20 @@ import { log, nanoid } from "@/lib/utils";
 
 export const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
+  : null;
+
+// [fork] Self-hosted email over SMTP. When SMTP_HOST is set, sendEmail goes
+// through this transport instead of Resend. EMAIL_FROM is the sender for every
+// message unless a caller passes `from` (e.g. a team's custom email).
+const smtp = process.env.SMTP_HOST
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === "true", // true for port 465
+      auth: process.env.SMTP_USER
+        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
+        : undefined,
+    })
   : null;
 
 export const sendEmail = async ({
@@ -39,6 +54,40 @@ export const sendEmail = async ({
   unsubscribeUrl?: string;
   idempotencyKey?: string;
 }) => {
+  if (smtp) {
+    // Papermark's own campaigns (marketing, and the scheduled onboarding /
+    // upsell mails "from Marc") aren't meant for a self-hosted install, and
+    // SMTP can't schedule. Skip them; send everything else right away.
+    if (marketing || scheduledAt) {
+      console.info(`[email] skipped "${subject}" (Papermark campaign mail)`);
+      return null;
+    }
+    const sender = from ?? process.env.EMAIL_FROM;
+    if (!sender) {
+      throw new Error("EMAIL_FROM must be set when sending over SMTP");
+    }
+    const html = await render(react);
+    const info = await smtp.sendMail({
+      from: sender,
+      to,
+      cc,
+      replyTo: replyTo ?? process.env.EMAIL_REPLY_TO,
+      subject,
+      html,
+      text: toPlainText(html),
+      headers: {
+        "X-Entity-Ref-ID": idempotencyKey ?? nanoid(),
+        ...(unsubscribeUrl
+          ? {
+              "List-Unsubscribe": `<${unsubscribeUrl}>`,
+              "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            }
+          : {}),
+      },
+    });
+    return { id: info.messageId };
+  }
+
   if (!resend) {
     // Throw an error if resend is not initialized
     throw new Error("Resend not initialized");
