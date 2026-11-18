@@ -1,10 +1,21 @@
 import {
+  selfHostConfigResponse,
+  selfHostDomainResponse,
+  selfHostVerification,
+} from "@/ee/domains/self-host";
+
+import {
   DomainConfigResponse,
   DomainResponse,
   DomainVerificationResponse,
 } from "@/lib/types";
 
+// [fork] Without a Vercel project the install serves custom domains itself
+// (oss/domains/self-host.ts): no Vercel API calls.
+const selfHosted = () => !process.env.PROJECT_ID_VERCEL;
+
 export const addDomainToVercel = async (domain: string) => {
+  if (selfHosted()) return selfHostDomainResponse(domain); // [fork]
   return await fetch(
     `https://api.vercel.com/v10/projects/${process.env.PROJECT_ID_VERCEL}/domains?teamId=${process.env.TEAM_ID_VERCEL}`,
     {
@@ -21,6 +32,7 @@ export const addDomainToVercel = async (domain: string) => {
 };
 
 export const removeDomainFromVercelProject = async (domain: string) => {
+  if (selfHosted()) return {}; // [fork]
   return await fetch(
     `https://api.vercel.com/v9/projects/${process.env.PROJECT_ID_VERCEL}/domains/${domain}?teamId=${process.env.TEAM_ID_VERCEL}`,
     {
@@ -33,6 +45,7 @@ export const removeDomainFromVercelProject = async (domain: string) => {
 };
 
 export const removeDomainFromVercelTeam = async (domain: string) => {
+  if (selfHosted()) return {}; // [fork]
   return await fetch(
     `https://api.vercel.com/v6/domains/${domain}?teamId=${process.env.TEAM_ID_VERCEL}`,
     {
@@ -63,6 +76,7 @@ export const removeDomainFromVercel = async (
 export const getDomainResponse = async (
   domain: string,
 ): Promise<DomainResponse & { error: { code: string; message: string } }> => {
+  if (selfHosted()) return selfHostDomainResponse(domain); // [fork]
   return await fetch(
     `https://api.vercel.com/v9/projects/${process.env.PROJECT_ID_VERCEL}/domains/${domain.toLowerCase()}?teamId=${process.env.TEAM_ID_VERCEL}`,
     {
@@ -80,6 +94,7 @@ export const getDomainResponse = async (
 export const getConfigResponse = async (
   domain: string,
 ): Promise<DomainConfigResponse> => {
+  if (selfHosted()) return selfHostConfigResponse(domain); // [fork]
   return await fetch(
     `https://api.vercel.com/v6/domains/${domain.toLowerCase()}/config?teamId=${process.env.TEAM_ID_VERCEL}`,
     {
@@ -95,6 +110,7 @@ export const getConfigResponse = async (
 export const verifyDomain = async (
   domain: string,
 ): Promise<DomainVerificationResponse> => {
+  if (selfHosted()) return selfHostVerification(domain); // [fork]
   return await fetch(
     `https://api.vercel.com/v9/projects/${process.env.PROJECT_ID_VERCEL}/domains/${domain.toLowerCase()}/verify?teamId=${process.env.TEAM_ID_VERCEL}`,
     {
