@@ -43,7 +43,10 @@ function killGroup(child: Child, signal: NodeJS.Signals): void {
   }
 }
 
-function spawnWorker(counterDir: string): Child {
+function spawnWorker(
+  counterDir: string,
+  extraEnv: Record<string, string> = {},
+): Child {
   const proc = spawn(
     "npx",
     [
@@ -62,6 +65,7 @@ function spawnWorker(counterDir: string): Child {
         JOBS_SCHEMA: process.env.JOBS_SCHEMA,
         JOBS_DBOS_SCHEMA: process.env.JOBS_DBOS_SCHEMA,
         WORKER_FIXTURE_DIR: counterDir,
+        ...extraEnv,
       },
     },
   );
@@ -216,6 +220,19 @@ async function main() {
     assert(max === workerConcurrency() + 4, `pool max ${max}`);
   });
 
+  await check("worker: every queue caps claims at the worker concurrency", async () => {
+    const client = await (await import("./client")).getClient();
+    const queues = await client.listQueues();
+    assert(queues.length > 1, `queues registered (${queues.length})`);
+    assert(queues.some((q) => q.name === "papermark-wait"), "wait queue registered");
+    for (const q of queues) {
+      assert(
+        q.workerConcurrency === workerConcurrency(),
+        `${q.name}: workerConcurrency ${q.workerConcurrency}`,
+      );
+    }
+  });
+
   await check("worker: applies the cron schedule", async () => {
     const schedule = await DBOS.getSchedule("cleanup-expired-exports");
     assert(schedule, "schedule exists");
@@ -323,6 +340,37 @@ async function main() {
       assert((await waitForStatus(run.id, ["CRASHED"])) === "CRASHED", "still CRASHED");
       await stopWorker(child);
     });
+
+    await check(
+      "bounded claims: a poison run can't dead-letter the runs queued behind it",
+      async () => {
+        // Enqueued while no worker runs, so the first poll sees the whole backlog.
+        const poison = await tasks.trigger("fx-poison", {});
+        await sleep(50);
+        const normal = [];
+        for (let i = 0; i < 3; i++) normal.push(await tasks.trigger("fx-normal", {}));
+        const oneSlot = { JOBS_WORKER_CONCURRENCY: "1" };
+        for (let start = 1; start <= MAX_RECOVERY_ATTEMPTS + 1; start++) {
+          const child = spawnWorker(dir, oneSlot);
+          const code = await waitExit(child, 60_000);
+          assert(code !== 0, `start ${start}: worker crashed (code ${code})`);
+          assert(counter(dir, "poison") === start, `start ${start}: poison ran ${counter(dir, "poison")} times`);
+        }
+        const child = spawnWorker(dir, oneSlot);
+        await waitReady(child);
+        await waitForStatus(poison.id, ["CRASHED"], 30_000);
+        const statuses = [];
+        for (const run of normal) {
+          statuses.push(await waitForStatus(run.id, ["COMPLETED", "FAILED", "CRASHED", "CANCELED"], 30_000));
+        }
+        assert(
+          statuses.every((s) => s === "COMPLETED"),
+          `runs behind the poison run: ${statuses.join(", ")}`,
+        );
+        assert(counter(dir, "normal") === 3, `normal bodies ran ${counter(dir, "normal")} times`);
+        await stopWorker(child);
+      },
+    );
   } finally {
     killAll();
     rmSync(dir, { recursive: true, force: true });

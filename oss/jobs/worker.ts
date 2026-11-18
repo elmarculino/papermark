@@ -14,6 +14,7 @@ import {
   DEFAULT_QUEUE,
   JOBS_APP_NAME,
   JOBS_APP_VERSION,
+  WAIT_QUEUE,
   dbosSchema,
   jobsBackend,
   jobsDatabaseUrl,
@@ -85,10 +86,10 @@ export async function startWorker(
     systemDatabaseSchemaName: dbosSchema(),
     applicationVersion: JOBS_APP_VERSION,
   });
+  // Before launch, so the dispatcher's first poll already sees this worker's
+  // claim cap (a row left by an older worker could lack it).
+  await publishRegistry({ workerConcurrency: concurrency });
   await DBOS.launch();
-  // Queues registered after launch are picked up by DBOS's dispatcher, which
-  // re-reads the queues table every second.
-  await publishRegistry();
 
   const scheduled = allTasks().filter((t) => t.kind === "scheduled");
   await DBOS.applySchedules(
@@ -102,7 +103,11 @@ export async function startWorker(
     })),
   );
 
-  const queues = new Set([DEFAULT_QUEUE, ...allQueues().map((q) => q.name)]);
+  const queues = new Set([
+    DEFAULT_QUEUE,
+    WAIT_QUEUE,
+    ...allQueues().map((q) => q.name),
+  ]);
   console.log(
     `jobs worker ready: ${allTasks().length} tasks, ${queues.size} queues, ${scheduled.length} schedules, concurrency ${concurrency}`,
   );

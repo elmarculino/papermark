@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type TriggerOptions, enqueueRun, getClient } from "../client";
+import { WAIT_QUEUE } from "../config";
 import {
   RunCanceledError,
   type RunContext,
@@ -136,7 +137,11 @@ function makeHandle<P>(id: string): TaskHandle<P> {
       if (!ctx) {
         throw new Error("triggerAndWait can only be called inside a task run");
       }
-      const { id: runId } = await enqueueRun(id, payload, options);
+      // A child the call and the task leave without a queue runs on the
+      // wait queue, so waiting parents can't fill the queue it needs.
+      const { id: runId } = await enqueueRun(id, payload, options, {
+        defaultQueue: WAIT_QUEUE,
+      });
       try {
         // The parent gives back its worker slot while the child runs.
         const output = await ctx.yieldSlot(async () =>

@@ -4,7 +4,11 @@
  * resolve a task's queue without importing the task code.
  */
 import { getClient } from "./client";
-import { DEFAULT_QUEUE, UNLIMITED_PARTITION_CONCURRENCY } from "./config";
+import {
+  DEFAULT_QUEUE,
+  UNLIMITED_PARTITION_CONCURRENCY,
+  WAIT_QUEUE,
+} from "./config";
 import type { RetryOptions } from "./retry";
 import { readTaskRegistry, upsertTaskRegistry } from "./store";
 
@@ -53,8 +57,16 @@ export const getTask = (id: string) => tasks.get(id);
 export const allTasks = () => [...tasks.values()];
 export const allQueues = () => [...queues.values()];
 
-/** Worker: publishes the in-process registry so apps can resolve queues. */
-export async function publishRegistry(): Promise<void> {
+/**
+ * Worker: publishes the in-process registry so apps can resolve queues.
+ * `workerConcurrency` is the worker's run cap (required, so a publish can
+ * never drop it): every queue claims at most that many runs at once, so a
+ * backlog stays ENQUEUED instead of being claimed and accruing DBOS recovery
+ * attempts while it waits for a slot.
+ */
+export async function publishRegistry(opts: {
+  workerConcurrency: number;
+}): Promise<void> {
   await upsertTaskRegistry(
     allTasks().map((t) => ({
       taskId: t.id,
@@ -64,11 +76,14 @@ export async function publishRegistry(): Promise<void> {
   );
   const client = await getClient();
   const all = new Map(queues);
-  if (!all.has(DEFAULT_QUEUE)) all.set(DEFAULT_QUEUE, { name: DEFAULT_QUEUE });
+  for (const name of [DEFAULT_QUEUE, WAIT_QUEUE]) {
+    if (!all.has(name)) all.set(name, { name });
+  }
   for (const q of all.values()) {
     // Through the client so it works before (or without) DBOS.launch();
     // always_update makes a changed concurrencyLimit take effect on redeploy.
     await client.registerQueue(q.name, {
+      workerConcurrency: opts.workerConcurrency,
       partitionConcurrency:
         q.concurrencyLimit ?? UNLIMITED_PARTITION_CONCURRENCY,
       onConflict: "always_update",

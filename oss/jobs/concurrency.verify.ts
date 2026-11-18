@@ -19,6 +19,7 @@ async function main() {
   await useIsolatedSchemas("conc");
   const { queue, task } = await import("./sdk");
   const { destroyClient, getClient } = await import("./client");
+  const { DEFAULT_QUEUE, WAIT_QUEUE } = await import("./config");
   const { getPool } = await import("./db");
 
   let inFlight = 0;
@@ -48,6 +49,16 @@ async function main() {
   const tParent = task({
     id: "t-parent",
     run: async () => (await tChild.triggerAndWait({})).ok,
+  });
+
+  const tRouter = task({
+    id: "t-router",
+    run: async () => {
+      const plain = await tChild.triggerAndWait({});
+      const explicit = await tChild.triggerAndWait({}, { queue: "q-c" });
+      const declared = await tKeyed.triggerAndWait({});
+      return { plain: plain.id, explicit: explicit.id, declared: declared.id };
+    },
   });
 
   let waiterRan = false;
@@ -88,6 +99,41 @@ async function main() {
     await waitForStatus(b.id, ["COMPLETED"]);
     assert(overlap(a.id, b.id), "runs did not overlap");
   });
+
+  await check(
+    "triggerAndWait: a child with no queue runs on the wait queue, a chosen queue is kept",
+    async () => {
+      const { id } = await tRouter.trigger({});
+      assert(
+        (await waitForStatus(id, ["COMPLETED", "FAILED"])) === "COMPLETED",
+        "router",
+      );
+      const ids = (await client.getWorkflow(id))!.output as Record<
+        string,
+        string
+      >;
+      const queueOf = async (runId: string) =>
+        (await client.getWorkflow(runId))!.queueName;
+      assert(
+        (await queueOf(ids.plain)) === WAIT_QUEUE,
+        `plain: ${await queueOf(ids.plain)}`,
+      );
+      assert(
+        (await queueOf(ids.explicit)) === "q-c",
+        `explicit: ${await queueOf(ids.explicit)}`,
+      );
+      assert(
+        (await queueOf(ids.declared)) === "q-c",
+        `declared: ${await queueOf(ids.declared)}`,
+      );
+      const plainTrigger = await tChild.trigger({});
+      await waitForStatus(plainTrigger.id, ["COMPLETED"]);
+      assert(
+        (await queueOf(plainTrigger.id)) === DEFAULT_QUEUE,
+        `plain .trigger(): ${await queueOf(plainTrigger.id)}`,
+      );
+    },
+  );
 
   await check(
     "parents filling every slot in triggerAndWait still let children run",

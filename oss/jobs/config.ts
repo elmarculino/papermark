@@ -15,6 +15,13 @@ export const JOBS_APP_VERSION = "papermark-jobs-v1";
 export const MAX_RECOVERY_ATTEMPTS = 3;
 /** Queue for tasks that don't declare one. */
 export const DEFAULT_QUEUE = "papermark-default";
+/**
+ * Queue for `triggerAndWait` children that neither the call nor the task
+ * gives a queue. DBOS counts a waiting parent against its own queue's claim
+ * cap, so a child on the parent's queue could never be claimed once waiting
+ * parents fill it.
+ */
+export const WAIT_QUEUE = "papermark-wait";
 /** Partition for enqueues without a concurrencyKey. */
 export const DEFAULT_PARTITION = "_default";
 /** Per-partition limit for queues without a concurrencyLimit. */

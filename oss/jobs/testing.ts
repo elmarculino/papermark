@@ -95,9 +95,8 @@ export async function startTestWorker(
 
   setStrictRegistry(true);
   await ensureJobsSchema();
-  registerJobWorkflows(
-    new Semaphore(opts.concurrency ?? config.workerConcurrency()),
-  );
+  const concurrency = opts.concurrency ?? config.workerConcurrency();
+  registerJobWorkflows(new Semaphore(concurrency));
   DBOS.setConfig({
     name: config.JOBS_APP_NAME,
     systemDatabaseUrl: config.jobsDatabaseUrl(),
@@ -105,9 +104,7 @@ export async function startTestWorker(
     applicationVersion: config.JOBS_APP_VERSION,
     runAdminServer: false,
   });
+  await publishRegistry({ workerConcurrency: concurrency });
   await DBOS.launch();
-  // Queues registered after launch are picked up by DBOS's dispatcher, which
-  // re-reads the queues table every second.
-  await publishRegistry();
   return { stop: () => DBOS.shutdown() };
 }

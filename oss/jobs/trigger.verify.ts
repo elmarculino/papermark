@@ -60,7 +60,7 @@ async function main() {
       assert(n === 0, "no layer row");
     },
   );
-  await publishRegistry();
+  await publishRegistry({ workerConcurrency: 4 });
   const client = await getClient();
   const RUN_ID = /^run_[0-9a-f]{32}$/;
   const layerRows = async () =>

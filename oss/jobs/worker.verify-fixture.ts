@@ -1,11 +1,12 @@
 /**
- * Worker process for worker.verify.ts (restart safety and the crash cap).
+ * Worker process for worker.verify.ts (restart safety, the crash cap and
+ * bounded claims).
  * Each task body counts its executions in a file under WORKER_FIXTURE_DIR.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { task } from "./sdk";
+import { queue, task } from "./sdk";
 import { runWorker } from "./worker";
 
 function bump(name: string): void {
@@ -43,6 +44,28 @@ task({
   run: async () => {
     bump("crash");
     process.exit(1);
+  },
+});
+
+// The poison run and the runs behind it share one queue.
+const poisonQueue = queue({ name: "fx-poison-q" });
+
+task({
+  id: "fx-poison",
+  queue: poisonQueue,
+  run: async () => {
+    bump("poison");
+    process.exit(1);
+  },
+});
+
+task({
+  id: "fx-normal",
+  queue: poisonQueue,
+  retry: { maxAttempts: 1 },
+  run: async () => {
+    bump("normal");
+    return "normal done";
   },
 });
 

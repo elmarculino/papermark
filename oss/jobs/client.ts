@@ -78,10 +78,17 @@ const SUPPORTED_OPTIONS = new Set([
 
 const UNFINISHED_KEY_RELEASE = new Set(["FAILED", "CRASHED", "CANCELED"]);
 
+/** Layer-internal enqueue settings, kept apart from the user's options. */
+export type EnqueueInternals = {
+  /** Queue used when neither the options nor the task give one. */
+  defaultQueue?: string;
+};
+
 export async function enqueueRun(
   taskId: string,
   payload: unknown,
   options: TriggerOptions = {},
+  internals: EnqueueInternals = {},
 ): Promise<{ id: string }> {
   for (const key of Object.keys(options)) {
     if (!SUPPORTED_OPTIONS.has(key)) {
@@ -96,10 +103,16 @@ export async function enqueueRun(
   // Always confirm against the DB registry, so a fresh install (worker never
   // started) fails with the same clear error for in-process handles too.
   const registeredQueue = await resolveTaskQueue(taskId);
-  const taskQueue = def ? def.queueName : registeredQueue;
+  // The DB registry records a task without a queue as DEFAULT_QUEUE.
+  const taskQueue = def
+    ? def.queueName
+    : registeredQueue === DEFAULT_QUEUE
+      ? undefined
+      : registeredQueue;
   const requested =
     typeof options.queue === "string" ? options.queue : options.queue?.name;
-  const queueName = requested ?? taskQueue ?? DEFAULT_QUEUE;
+  const queueName =
+    requested ?? taskQueue ?? internals.defaultQueue ?? DEFAULT_QUEUE;
   await assertQueueRegistered(queueName);
 
   if (def?.schema) payload = def.schema.parse(payload);
