@@ -10,11 +10,13 @@ import PapermarkLogo from "@/public/_static/papermark-logo.svg";
 import { signIn } from "next-auth/react";
 import { toast } from "sonner";
 
+import type { LoginMethods } from "@/ee/_shared/login-methods";
+
 import LinkedIn from "@/components/shared/icons/linkedin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export default function Register() {
+export default function Register({ methods }: { methods: LoginMethods }) {
   const { next } = useParams as { next?: string };
 
   const [email, setEmail] = useState<string>("");
@@ -73,8 +75,12 @@ export default function Register() {
           />
           <Button type="submit">Continue with Email</Button>
         </form>
+        {/* [fork] only configured providers */}
+        {(methods.google || methods.linkedin) && (
         <p className="text-center">or</p>
+        )}
         <div className="flex flex-col space-y-2 px-4 py-8 sm:px-16">
+          {methods.google && (
           <Button
             onClick={() => {
               signIn("google", {
@@ -93,6 +99,8 @@ export default function Register() {
             </svg>
             <span>Continue with Google</span>
           </Button>
+          )}
+          {methods.linkedin && (
           <Button
             onClick={() => {
               signIn("linkedin", {
@@ -104,6 +112,7 @@ export default function Register() {
             <LinkedIn />
             <span>Continue with LinkedIn</span>
           </Button>
+          )}
         </div>
       </div>
     </div>
