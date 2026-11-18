@@ -1,5 +1,6 @@
 import React from "react";
 
+import { CompanyCopyrightText } from "@/ee/_shared/email-company";
 import {
   Body,
   Button,
@@ -58,10 +59,7 @@ const Onboarding2Email = () => {
             </Text>
             <Hr />
             <Section className="text-gray-400">
-              <Text className="text-xs">
-                © {new Date().getFullYear()} Papermark, Inc. All rights
-                reserved.
-              </Text>
+              <CompanyCopyrightText />
               <Text className="text-xs">
                 If you have any feedback or questions about this email, simply
                 reply to it. I&apos;d love to hear from you!

@@ -1,5 +1,6 @@
 import React from "react";
 
+import { CompanyAddressText } from "@/ee/_shared/email-company";
 import {
   Body,
   Container,
@@ -60,13 +61,7 @@ const VerificationCodeEmail = ({
             </Text>
             <Hr className="my-6" />
             <Section className="text-gray-400">
-              <Text className="text-xs text-neutral-500">
-                Papermark, Inc.
-                <br />
-                1111B S Governors Ave #28117
-                <br />
-                Dover, DE 19904
-              </Text>
+              <CompanyAddressText className="text-xs text-neutral-500" />
             </Section>
           </Container>
         </Body>

@@ -1,5 +1,9 @@
 import React from "react";
 
+import {
+  CompanyAddressText,
+  CompanyCopyrightText,
+} from "@/ee/_shared/email-company";
 import { Hr, Link, Section, Text } from "react-email";
 
 export const Footer = ({
@@ -25,13 +29,7 @@ export const Footer = ({
             Unsubscribe here.
           </Link>
         </Text>
-        <Text className="text-[12px] text-neutral-500">
-          Papermark, Inc.
-          <br />
-          1111B S Governors Ave #28117
-          <br />
-          Dover, DE 19904
-        </Text>
+        <CompanyAddressText />
       </>
     );
   }
@@ -40,15 +38,7 @@ export const Footer = ({
     <>
       <Hr />
       <Section className="text-gray-400">
-        <Text className="text-xs">
-          © {new Date().getFullYear()} Papermark, Inc. All rights reserved.{" "}
-          {withAddress && (
-            <>
-              <br />
-              1111B S Governors Ave #28117, Dover, DE 19904
-            </>
-          )}
-        </Text>
+        <CompanyCopyrightText withAddress={withAddress} />
         <Text className="text-xs">{footerText}</Text>
       </Section>
     </>

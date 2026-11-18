@@ -1,5 +1,6 @@
 import React from "react";
 
+import { CompanyCopyrightText } from "@/ee/_shared/email-company";
 import {
   Body,
   Button,
@@ -12,6 +13,7 @@ import {
   Tailwind,
   Text,
 } from "react-email";
+
 
 type DocumentChange = {
   documentName: string;
@@ -91,10 +93,7 @@ export default function DataroomDigestNotification({
 
             <Hr />
             <Section className="text-gray-400">
-              <Text className="text-xs">
-                © {new Date().getFullYear()} Papermark, Inc. All rights
-                reserved.
-              </Text>
+              <CompanyCopyrightText />
               <Text className="text-xs">
                 You received this{" "}
                 {frequency !== "instant" ? `${frequency} digest ` : "notification "}
