@@ -16,6 +16,8 @@ export function getPool(): Pool {
     globalForPool.__papermarkJobsPool = new Pool({
       connectionString: jobsDatabaseUrl(),
       max: Number(process.env.JOBS_DB_POOL_SIZE || 3),
+      // Fail loudly on pool exhaustion instead of hanging.
+      connectionTimeoutMillis: 10_000,
     });
     // An error on an idle client (e.g. a Postgres restart) would otherwise be
     // an unhandled 'error' event and kill the process.

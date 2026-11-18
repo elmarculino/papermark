@@ -93,7 +93,10 @@ export async function enqueueRun(
 
   const def = getTask(taskId);
   // Unknown task ids throw even when a queue is given.
-  const taskQueue = def ? def.queueName : await resolveTaskQueue(taskId);
+  // Always confirm against the DB registry, so a fresh install (worker never
+  // started) fails with the same clear error for in-process handles too.
+  const registeredQueue = await resolveTaskQueue(taskId);
+  const taskQueue = def ? def.queueName : registeredQueue;
   const requested =
     typeof options.queue === "string" ? options.queue : options.queue?.name;
   const queueName = requested ?? taskQueue ?? DEFAULT_QUEUE;
@@ -124,8 +127,12 @@ export async function enqueueRun(
         options.idempotencyKey,
       );
       if (hit && hit.expiresAt.getTime() > Date.now()) {
-        const wf = await client.getWorkflow(hit.runId);
-        const status = wf ? toRunStatus(wf.status, null) : "FAILED";
+        // Read through `c`: a second pool connection could deadlock the pool.
+        const { rows } = await c.query<{ status: string }>(
+          `SELECT status FROM ${dbosSchema()}.workflow_status WHERE workflow_uuid = $1`,
+          [hit.runId],
+        );
+        const status = rows[0] ? toRunStatus(rows[0].status, null) : "FAILED";
         if (!UNFINISHED_KEY_RELEASE.has(status)) return { id: hit.runId };
       }
     }

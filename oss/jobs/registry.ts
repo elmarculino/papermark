@@ -29,8 +29,18 @@ export type QueueDef = { name: string; concurrencyLimit?: number };
 const tasks = new Map<string, TaskDef>();
 const queues = new Map<string, QueueDef>();
 
+let strict = false;
+
+/**
+ * Strict mode (worker, test workers): a duplicate task id throws. Off by
+ * default so a hot-reloaded module can re-register its tasks.
+ */
+export function setStrictRegistry(on: boolean): void {
+  strict = on;
+}
+
 export function registerTask(def: TaskDef): void {
-  if (tasks.has(def.id))
+  if (strict && tasks.has(def.id))
     throw new Error(`Task "${def.id}" is already registered`);
   tasks.set(def.id, def);
 }

@@ -89,13 +89,29 @@ function makeHandle<P>(id: string): TaskHandle<P> {
   };
 }
 
+const UNSUPPORTED_HOOKS = [
+  "onFailure",
+  "onStart",
+  "onSuccess",
+  "onComplete",
+  "onWait",
+  "onResume",
+  "onCancel",
+  "middleware",
+  "init",
+  "cleanup",
+  "catchError",
+] as const;
+
 function define<P>(
   def: TaskInput<P>,
   kind: "task" | "scheduled",
   extra: { schema?: { parse(x: unknown): unknown }; cron?: string } = {},
 ): TaskHandle<P> {
-  if (def.onFailure !== undefined) {
-    throw new Error("onFailure is not supported by the DBOS jobs backend");
+  for (const key of UNSUPPORTED_HOOKS) {
+    if (def[key] !== undefined) {
+      throw new Error(`${key} is not supported by the DBOS jobs backend`);
+    }
   }
   registerTask({
     id: def.id,
@@ -125,9 +141,19 @@ export function schemaTask<S extends { parse(x: unknown): any }>(
 
 export const schedules = {
   task<P = any>(
-    def: TaskInput<P> & { cron: string | { pattern: string } },
+    def: TaskInput<P> & {
+      cron: string | { pattern: string; timezone?: string };
+    },
   ): TaskHandle<P> {
     const cron = typeof def.cron === "string" ? def.cron : def.cron.pattern;
+    if (typeof def.cron !== "string") {
+      const tz = def.cron.timezone;
+      if (tz && tz !== "UTC") {
+        throw new Error(
+          `cron timezone "${tz}" is not supported by the DBOS jobs backend (UTC only)`,
+        );
+      }
+    }
     return define(def, "scheduled", { cron });
   },
 };
