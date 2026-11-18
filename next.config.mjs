@@ -17,6 +17,15 @@ if (blobBackend !== "s3" && blobBackend !== "vercel") {
   );
 }
 
+// Build-time view analytics store: "postgres" aliases the Tinybird client
+// (@chronark/zod-bird) to oss/analytics, which keeps events in Postgres.
+const analyticsBackend = process.env.ANALYTICS_BACKEND || "postgres";
+if (analyticsBackend !== "postgres" && analyticsBackend !== "tinybird") {
+  throw new Error(
+    `ANALYTICS_BACKEND must be "postgres" or "tinybird", got "${analyticsBackend}"`,
+  );
+}
+
 // Packages replaced by fork code at build time (exact import specifiers).
 const forkAliases = {
   ...(jobsBackend === "dbos"
@@ -30,6 +39,9 @@ const forkAliases = {
         "@vercel/blob": "./oss/blob/server.ts",
         "@vercel/blob/client": "./oss/blob/client.ts",
       }
+    : {}),
+  ...(analyticsBackend === "postgres"
+    ? { "@chronark/zod-bird": "./oss/analytics/tinybird.ts" }
     : {}),
 };
 
