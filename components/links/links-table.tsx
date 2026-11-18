@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTeam } from "@/context/team-context";
+import { PUBLIC_LINK_HOST } from "@/ee/_shared/public-host";
 import { InviteViewersModal } from "@/ee/features/dataroom-invitations/components/invite-viewers-modal";
 import { invitationEmailSchema } from "@/ee/features/dataroom-invitations/lib/schema/dataroom-invitations";
 import { PlanEnum } from "@/ee/stripe/constants";
@@ -126,7 +127,7 @@ const getDisplayUrl = (link: LinkWithViews) => {
   if (link.domainId) {
     return `${link.domainSlug}/${link.slug}`;
   }
-  return `papermark.com/view/${link.id}`;
+  return `${PUBLIC_LINK_HOST}/view/${link.id}`;
 };
 
 // Link URL cell component - displays URL with click-to-copy hover overlay

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTeam } from "@/context/team-context";
+import { PUBLIC_LINK_HOST } from "@/ee/_shared/public-host";
 import { BannerEditor } from "@/ee/features/branding/components/banner-editor";
 import { BrandingLinkPreviewForm } from "@/ee/features/branding/components/branding-link-preview-form";
 import { BrandingPreviewChrome } from "@/ee/features/branding/components/branding-preview-chrome";
@@ -1899,7 +1900,7 @@ export default function Branding() {
                 <BrandingPreviewChrome
                   name="document-view"
                   basePath="/nav_ppreview_demo"
-                  urlLabel="papermark.com/view/..."
+                  urlLabel={`${PUBLIC_LINK_HOST}/view/...`}
                   params={{
                     brandColor: debouncedBrandColor,
                     accentColor: debouncedAccentColor,
@@ -1949,7 +1950,7 @@ export default function Branding() {
                 <BrandingPreviewChrome
                   name="access-screen"
                   basePath="/entrance_ppreview_demo"
-                  urlLabel="papermark.com/view/..."
+                  urlLabel={`${PUBLIC_LINK_HOST}/view/...`}
                   params={{
                     brandColor: debouncedBrandColor,
                     accentColor: debouncedAccentColor,

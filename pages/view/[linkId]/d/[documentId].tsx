@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 
 import React, { useEffect, useState } from "react";
 
+import { PUBLIC_LINK_BASE_URL } from "@/ee/_shared/public-host";
 import { DataroomBrand } from "@prisma/client";
 import Cookies from "js-cookie";
 import { useSession } from "next-auth/react";
@@ -324,7 +325,7 @@ export async function getStaticProps(context: GetStaticPropsContext) {
           metaDescription: publicMeta.metaDescription,
           metaImage: publicMeta.metaImage,
           metaFavicon: publicMeta.metaFavicon,
-          metaUrl: `https://www.papermark.com/view/${linkId}`,
+          metaUrl: `${PUBLIC_LINK_BASE_URL}/view/${linkId}`,
         },
         showPoweredByBanner: false,
         showAccountCreationSlide: false,
