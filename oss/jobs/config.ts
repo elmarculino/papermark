@@ -38,17 +38,46 @@ export function jobsBackend(): JobsBackend {
   return value;
 }
 
-/** Worker-wide cap on runs executing at once (default 4). */
-export function workerConcurrency(): number {
-  const raw = process.env.JOBS_WORKER_CONCURRENCY;
-  if (raw === undefined || raw === "") return 4;
+/** An integer env var of at least `min`, or `fallback` when unset or blank. */
+function intFromEnv(name: string, fallback: number, min: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(
-      `JOBS_WORKER_CONCURRENCY must be a positive integer, got "${raw}"`,
-    );
+  if (!Number.isInteger(value) || value < min) {
+    const kind = min === 1 ? "a positive" : "a non-negative";
+    throw new Error(`${name} must be ${kind} integer, got "${raw}"`);
   }
   return value;
+}
+
+/** Worker-wide cap on runs executing at once (default 4). */
+export function workerConcurrency(): number {
+  return intFromEnv("JOBS_WORKER_CONCURRENCY", 4, 1);
+}
+
+/** The app's (each Next.js process's) layer pool size by default. */
+export const APP_DB_POOL_SIZE = 3;
+
+/** Size of the layer's Postgres pool: `JOBS_DB_POOL_SIZE`, else `fallback`. */
+export function jobsDbPoolSize(fallback: number): number {
+  return intFromEnv("JOBS_DB_POOL_SIZE", fallback, 1);
+}
+
+/**
+ * The worker's pool size: a connection per run slot, plus 4 for the cancel
+ * pollers, metadata writes, nested triggers and result polling.
+ */
+export function workerDbPoolSize(): number {
+  return jobsDbPoolSize(workerConcurrency() + 4);
+}
+
+/**
+ * How long a stopping worker waits for its executing runs to finish
+ * (`JOBS_SHUTDOWN_TIMEOUT_MS`, default 30 s). Runs still going after that
+ * are recovered by the next worker.
+ */
+export function shutdownTimeoutMs(): number {
+  return intFromEnv("JOBS_SHUTDOWN_TIMEOUT_MS", 30_000, 0);
 }
 
 const PRISMA_ONLY_PARAMS = [

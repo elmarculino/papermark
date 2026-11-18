@@ -37,7 +37,6 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 - Jobs, removed cron tasks: the worker creates or updates a DBOS schedule for every cron task it finds, but never deletes one. After a cron task disappears upstream, delete its schedule by hand with the DBOS client (`DBOSClient.deleteSchedule`).
 - Jobs, v1 limits: see "Jobs: DBOS layer, done" below (replayed side effects, one worker, no dashboard).
 - Presigned single-PUT uploads to SeaweedFS fail with `BadDigest`: the AWS SDK signs a `x-amz-checksum-crc32` into the URL. Document uploads go through tus and are fine; the signing-agreement PDF upload (`lib/files/put-file.ts`) is affected. Not a jobs issue.
-- Data-room change emails need `NEXT_PRIVATE_UNSUBSCRIBE_JWT_SECRET` in the app's env (missing from `.env.example`); without it `/api/jobs/send-dataroom-new-document-notification` returns 500 and the task logs `Failed to send dataroom notification`.
 
 ## Queue (production readiness)
 

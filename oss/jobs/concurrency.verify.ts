@@ -1,6 +1,6 @@
 /**
- * Worker-wide cap, per-key queue limits and slot release in triggerAndWait,
- * with a real worker on real Postgres.
+ * Worker-wide cap, per-key queue limits, slot release in triggerAndWait and
+ * cancellation while waiting for a slot, with a real worker on real Postgres.
  */
 import { loadEnvConfig } from "@next/env";
 
@@ -18,7 +18,7 @@ loadEnvConfig(process.cwd());
 async function main() {
   await useIsolatedSchemas("conc");
   const { queue, task } = await import("./sdk");
-  const { destroyClient } = await import("./client");
+  const { destroyClient, getClient } = await import("./client");
   const { getPool } = await import("./db");
 
   let inFlight = 0;
@@ -50,7 +50,17 @@ async function main() {
     run: async () => (await tChild.triggerAndWait({})).ok,
   });
 
+  let waiterRan = false;
+  const tHold = task({ id: "t-hold", run: () => sleep(8000) });
+  const tWaiter = task({
+    id: "t-waiter",
+    run: async () => {
+      waiterRan = true;
+    },
+  });
+
   const worker = await startTestWorker({ concurrency: 2 });
+  const client = await getClient();
   const overlap = (a: string, b: string) => {
     const x = intervals.get(a)!;
     const y = intervals.get(b)!;
@@ -93,6 +103,25 @@ async function main() {
         assert(status === "COMPLETED", `parent ${status}`);
       }
       assert(Date.now() - started < 10_000, "took 10 s or more");
+    },
+  );
+
+  await check(
+    "a run canceled while waiting for a slot ends CANCELED and never runs",
+    async () => {
+      const holders = await Promise.all([tHold.trigger({}), tHold.trigger({})]);
+      for (const { id } of holders) await waitForStatus(id, ["EXECUTING"]);
+      const waiter = await tWaiter.trigger({});
+      await sleep(1500); // claimed, waiting for one of the two slots
+      await client.cancelWorkflow(waiter.id);
+      for (const { id } of holders) await waitForStatus(id, ["COMPLETED"]);
+      await sleep(500);
+      assert(!waiterRan, "the canceled run's body ran");
+      assert(
+        (await waitForStatus(waiter.id, ["CANCELED", "COMPLETED"])) ===
+          "CANCELED",
+        "status",
+      );
     },
   );
 

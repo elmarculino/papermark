@@ -2,7 +2,15 @@
  * Pure helpers of the DBOS jobs layer (no database needed):
  *   npx tsx --tsconfig oss/tsconfig.jobs.json oss/jobs/helpers.verify.ts
  */
-import { jobsBackend, stripPrismaParams, workerConcurrency } from "./config";
+import {
+  APP_DB_POOL_SIZE,
+  jobsBackend,
+  jobsDbPoolSize,
+  shutdownTimeoutMs,
+  stripPrismaParams,
+  workerConcurrency,
+  workerDbPoolSize,
+} from "./config";
 import { parseDelay, parsePeriodMs } from "./duration";
 import { backoffMs, resolveRetry } from "./retry";
 import { runFlags, toRunStatus } from "./status";
@@ -73,6 +81,56 @@ async function main() {
     await throwsWith(() => workerConcurrency(), "JOBS_WORKER_CONCURRENCY");
     if (saved === undefined) delete process.env.JOBS_WORKER_CONCURRENCY;
     else process.env.JOBS_WORKER_CONCURRENCY = saved;
+  });
+  await check("JOBS_DB_POOL_SIZE", async () => {
+    const saved = {
+      pool: process.env.JOBS_DB_POOL_SIZE,
+      concurrency: process.env.JOBS_WORKER_CONCURRENCY,
+    };
+    delete process.env.JOBS_DB_POOL_SIZE;
+    delete process.env.JOBS_WORKER_CONCURRENCY;
+    assert(APP_DB_POOL_SIZE === 3, "app default 3");
+    assert(jobsDbPoolSize(APP_DB_POOL_SIZE) === 3, "unset: the fallback");
+    assert(workerDbPoolSize() === 8, "worker default: concurrency 4 + 4");
+    process.env.JOBS_WORKER_CONCURRENCY = "1";
+    assert(workerDbPoolSize() === 5, "worker default: concurrency 1 + 4");
+    process.env.JOBS_DB_POOL_SIZE = "";
+    assert(jobsDbPoolSize(3) === 3, "blank: the fallback");
+    process.env.JOBS_DB_POOL_SIZE = "12";
+    assert(jobsDbPoolSize(3) === 12, "set: the value");
+    assert(workerDbPoolSize() === 12, "set: the worker uses it too");
+    for (const bad of ["0", "-1", "2.5", "abc", "10x"]) {
+      process.env.JOBS_DB_POOL_SIZE = bad;
+      await throwsWith(
+        () => jobsDbPoolSize(3),
+        `JOBS_DB_POOL_SIZE must be a positive integer, got "${bad}"`,
+      );
+    }
+    for (const [name, value] of [
+      ["JOBS_DB_POOL_SIZE", saved.pool],
+      ["JOBS_WORKER_CONCURRENCY", saved.concurrency],
+    ] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  await check("JOBS_SHUTDOWN_TIMEOUT_MS", async () => {
+    const saved = process.env.JOBS_SHUTDOWN_TIMEOUT_MS;
+    delete process.env.JOBS_SHUTDOWN_TIMEOUT_MS;
+    assert(shutdownTimeoutMs() === 30_000, "default 30 s");
+    process.env.JOBS_SHUTDOWN_TIMEOUT_MS = "0";
+    assert(shutdownTimeoutMs() === 0, "0: don't wait");
+    process.env.JOBS_SHUTDOWN_TIMEOUT_MS = "5000";
+    assert(shutdownTimeoutMs() === 5000, "set: the value");
+    for (const bad of ["-1", "1.5", "soon"]) {
+      process.env.JOBS_SHUTDOWN_TIMEOUT_MS = bad;
+      await throwsWith(
+        () => shutdownTimeoutMs(),
+        `JOBS_SHUTDOWN_TIMEOUT_MS must be a non-negative integer, got "${bad}"`,
+      );
+    }
+    if (saved === undefined) delete process.env.JOBS_SHUTDOWN_TIMEOUT_MS;
+    else process.env.JOBS_SHUTDOWN_TIMEOUT_MS = saved;
   });
   await check("jobsBackend", async () => {
     const saved = process.env.JOBS_BACKEND;

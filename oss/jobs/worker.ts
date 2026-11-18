@@ -17,9 +17,10 @@ import {
   dbosSchema,
   jobsBackend,
   jobsDatabaseUrl,
+  shutdownTimeoutMs,
   workerConcurrency,
 } from "./config";
-import { ensureJobsSchema } from "./db";
+import { ensureJobsSchema, sizePoolForWorker } from "./db";
 import { registerJobWorkflows, scheduleWorkflow } from "./executor";
 import {
   allQueues,
@@ -63,6 +64,7 @@ export async function startWorker(
     );
   }
   const root = opts.root ?? process.cwd();
+  sizePoolForWorker();
 
   const config = await loadTriggerConfig(root);
   setRetryDefaults(config.retries?.default ?? {});
@@ -104,7 +106,12 @@ export async function startWorker(
   console.log(
     `jobs worker ready: ${allTasks().length} tasks, ${queues.size} queues, ${scheduled.length} schedules, concurrency ${concurrency}`,
   );
-  return { stop: () => DBOS.shutdown() };
+  // Stops claiming, then waits for the runs executing here; any still going
+  // after the timeout are recovered by the next worker.
+  return {
+    stop: () =>
+      DBOS.shutdown({ workflowCompletionTimeoutMS: shutdownTimeoutMs() }),
+  };
 }
 
 /**

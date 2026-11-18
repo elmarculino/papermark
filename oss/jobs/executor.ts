@@ -7,22 +7,25 @@
  */
 import { DBOS } from "@dbos-inc/dbos-sdk";
 
-import { getClient } from "./client";
 import {
   DEFAULT_QUEUE,
   MAX_RECOVERY_ATTEMPTS,
   SCHEDULE_WORKFLOW,
   TASK_WORKFLOW,
+  dbosSchema,
 } from "./config";
 import { RunCanceledError, type RunContext, runStorage } from "./context";
-import { withTransaction } from "./db";
+import { getPool, withTransaction } from "./db";
 import { type TaskDef, getTask } from "./registry";
 import { backoffMs, resolveRetry } from "./retry";
 import { AbortTaskRunError } from "./sdk";
 import type { Semaphore } from "./semaphore";
 import { type RunRow, getRunRow, insertRun, markStarted } from "./store";
 
+/** Cancel check of an executing run. */
 const CANCEL_POLL_MS = 2000;
+/** Cancel check of a run waiting for a worker slot (it holds no slot, so slower). */
+const WAITING_CANCEL_POLL_MS = 5000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -63,19 +66,25 @@ function logFailure(row: RunRow, attempt: number, err: unknown): void {
   );
 }
 
-/** Sets `ctx.canceled` once DBOS reports the workflow CANCELLED. */
-function startCancelPoller(ctx: RunContext): () => void {
-  // Through the client, not DBOS.getWorkflowStatus: inside a workflow that
-  // call is checkpointed as an operation, so every poll would add a row.
+/**
+ * Sets `ctx.canceled` once DBOS reports the workflow CANCELLED. Reads the
+ * status column straight from the pool: inside a workflow,
+ * DBOS.getWorkflowStatus is checkpointed as an operation, so every poll would
+ * add a row.
+ */
+function startCancelPoller(ctx: RunContext, everyMs: number): () => void {
   const timer = setInterval(() => {
-    getClient()
-      .then((client) => client.getWorkflow(ctx.runId))
-      .then((status) => {
-        if (status?.status === "CANCELLED") ctx.canceled = true;
+    getPool()
+      .query<{ status: string }>(
+        `SELECT status FROM ${dbosSchema()}.workflow_status WHERE workflow_uuid = $1`,
+        [ctx.runId],
+      )
+      .then(({ rows }) => {
+        if (rows[0]?.status === "CANCELLED") ctx.canceled = true;
       })
       // A failed poll is retried on the next tick.
       .catch(() => {});
-  }, CANCEL_POLL_MS);
+  }, everyMs);
   return () => clearInterval(timer);
 }
 
@@ -103,9 +112,12 @@ async function executeRun(
       }
     },
   };
-  const stopPoller = startCancelPoller(ctx);
+  // The semaphore checks ctx.canceled while the run waits for a slot.
+  let stopPoller = startCancelPoller(ctx, WAITING_CANCEL_POLL_MS);
   try {
     release = await sem.acquire(() => ctx.canceled);
+    stopPoller();
+    stopPoller = startCancelPoller(ctx, CANCEL_POLL_MS);
     await markStarted(row.id);
     const retry = resolveRetry(task.retry, row.maxAttempts ?? undefined);
     for (let n = 1; ; n++) {

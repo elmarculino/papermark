@@ -150,7 +150,7 @@ function counter(dir: string, name: string): number {
 
 async function main() {
   const { discoverTaskFiles, startWorker } = await import("./worker");
-  const { MAX_RECOVERY_ATTEMPTS } = await import("./config");
+  const { MAX_RECOVERY_ATTEMPTS, workerConcurrency } = await import("./config");
 
   let files: string[] = [];
   await check("discover: real task files, no verify scripts", async () => {
@@ -208,6 +208,12 @@ async function main() {
     assert(Number(m[1]) === allTasks().length && Number(m[1]) >= 22, ready);
     assert(Number(m[3]) === 1, `one schedule: ${ready}`);
     assert(getTask("cleanup-expired-exports")?.kind === "scheduled", "cron task");
+  });
+
+  await check("worker: pool defaults to concurrency + 4 connections", () => {
+    assert(process.env.JOBS_DB_POOL_SIZE === undefined, "JOBS_DB_POOL_SIZE unset");
+    const max = getPool().options.max;
+    assert(max === workerConcurrency() + 4, `pool max ${max}`);
   });
 
   await check("worker: applies the cron schedule", async () => {
@@ -272,6 +278,21 @@ async function main() {
       assert(counter(dir, "long") === 2, `long body ran twice (${counter(dir, "long")})`);
       assert(counter(dir, "delayed") === 1, "delayed body ran once");
       await stopWorker(child);
+    });
+
+    await check("graceful stop: SIGINT waits for executing runs", async () => {
+      const child = spawnWorker(dir);
+      await waitReady(child);
+      const before = counter(dir, "long");
+      const long = await tasks.trigger("fx-long", {});
+      await waitFor("long task started", () => counter(dir, "long") === before + 1, 20_000, child);
+      await stopWorker(child);
+      // No worker is running now: the run finished during the drain.
+      assert(
+        (await waitForStatus(long.id, ["COMPLETED", "EXECUTING"])) === "COMPLETED",
+        "run completed before the worker exited",
+      );
+      assert(counter(dir, "long") === before + 1, "body ran once");
     });
 
     await check("crash cap: a run that keeps killing the worker ends CRASHED", async () => {

@@ -1,21 +1,44 @@
 /**
- * Postgres access for the jobs layer: a small shared pool and the layer's
- * own schema (DBOS's system tables are created by DBOS.migrate).
+ * Postgres access for the jobs layer: a shared pool (small in the app, sized
+ * to the run slots in the worker) and the layer's own schema (DBOS's system
+ * tables are created by DBOS.migrate).
  */
 import { DBOS } from "@dbos-inc/dbos-sdk";
 import { Pool, type PoolClient } from "pg";
 
-import { dbosSchema, jobsDatabaseUrl, jobsSchema } from "./config";
+import {
+  APP_DB_POOL_SIZE,
+  dbosSchema,
+  jobsDatabaseUrl,
+  jobsDbPoolSize,
+  jobsSchema,
+  workerDbPoolSize,
+} from "./config";
 
 const globalForPool = globalThis as unknown as {
   __papermarkJobsPool?: Pool;
 };
 
+let workerPool = false;
+
+/**
+ * Worker: sizes the pool for its run slots (`workerDbPoolSize`). Must run
+ * before the pool is first used.
+ */
+export function sizePoolForWorker(): void {
+  if (globalForPool.__papermarkJobsPool && !workerPool) {
+    throw new Error(
+      "sizePoolForWorker() must run before the jobs pool is created",
+    );
+  }
+  workerPool = true;
+}
+
 export function getPool(): Pool {
   if (!globalForPool.__papermarkJobsPool) {
     globalForPool.__papermarkJobsPool = new Pool({
       connectionString: jobsDatabaseUrl(),
-      max: Number(process.env.JOBS_DB_POOL_SIZE || 3),
+      max: workerPool ? workerDbPoolSize() : jobsDbPoolSize(APP_DB_POOL_SIZE),
       // Fail loudly on pool exhaustion instead of hanging.
       connectionTimeoutMillis: 10_000,
     });
