@@ -28,7 +28,7 @@ async function main() {
   const pdfBytes = await pdf.save();
 
   const prefix = `zip-verify/${Date.now()}`;
-  const objects: Record<string, Uint8Array | string> = {
+  const objects: Record<string, Uint8Array | string | Buffer> = {
     [`${prefix}/a.pdf`]: pdfBytes,
     [`${prefix}/b.txt`]: "hello zip",
     [`${prefix}/c.txt`]: "same name, other folder",
@@ -246,6 +246,186 @@ async function main() {
       assert(deleted === before, `deleted ${deleted} of ${before}`);
       assert((await list()) === 0, "prefix empty");
     });
+
+    await check(
+      "watermarked entries then plain ones; images become .pdf",
+      async () => {
+        const png = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+          "base64",
+        );
+        await client.send(
+          new PutObjectCommand({
+            Bucket: config.bucket,
+            Key: `${prefix}/p.png`,
+            Body: png,
+          }),
+        );
+        objects[`${prefix}/p.png`] = png;
+        const wm = {
+          enabled: true,
+          config: {
+            text: "CONFIDENTIAL",
+            isTiled: false,
+            position: "middle-center",
+            rotation: 0,
+            color: "#ff0000",
+            fontSize: 12,
+            opacity: 0.5,
+          },
+          viewerData: {},
+        };
+        const { downloadUrl } = await zipDownloadBatch({
+          storageConfig: config,
+          sourceBucket: config.bucket,
+          zipFileName: "mixed",
+          watermarkConfig: wm,
+          folderStructure: {
+            "/": {
+              name: "Root",
+              path: "/",
+              files: [
+                {
+                  name: "Report.pdf",
+                  key: `${prefix}/a.pdf`,
+                  type: "pdf",
+                  numPages: 1,
+                  needsWatermark: true,
+                },
+                {
+                  name: "Photo.png",
+                  key: `${prefix}/p.png`,
+                  type: "image",
+                  needsWatermark: true,
+                },
+                { name: "notes.txt", key: `${prefix}/b.txt` },
+              ],
+            },
+            "/Empty": { name: "Empty", path: "/Empty", files: [] },
+          },
+        });
+        const zip = path.join(dir, "mixed.zip");
+        writeFileSync(
+          zip,
+          Buffer.from(await (await fetch(downloadUrl)).arrayBuffer()),
+        );
+        const entries = execFileSync("unzip", ["-Z1", zip])
+          .toString()
+          .trim()
+          .split("\n")
+          .sort();
+        assert(
+          entries.join("|") === "Empty/|Photo.pdf|Report.pdf|notes.txt",
+          `entries: ${entries.join(", ")}`,
+        );
+        execFileSync("unzip", ["-q", "-o", zip, "-d", path.join(dir, "mixed")]);
+        assert(
+          readFileSync(path.join(dir, "mixed/Photo.pdf"))
+            .subarray(0, 5)
+            .toString() === "%PDF-",
+          "watermarked image is a PDF",
+        );
+      },
+    );
+
+    await check(
+      "a source stream failing mid-read rejects and leaves no upload",
+      async () => {
+        const { S3Client, ListMultipartUploadsCommand } =
+          await import("@aws-sdk/client-s3");
+        const { Readable } = await import("node:stream");
+        const { randomBytes } = await import("node:crypto");
+        const big = randomBytes(6 * 1024 * 1024); // > 5 MB: a multipart upload is open
+        await client.send(
+          new PutObjectCommand({
+            Bucket: config.bucket,
+            Key: `${prefix}/big.bin`,
+            Body: big,
+          }),
+        );
+        objects[`${prefix}/big.bin`] = "";
+        const realSend = S3Client.prototype.send;
+        (S3Client.prototype as any).send = function (
+          command: any,
+          ...rest: any[]
+        ) {
+          if (command?.input?.Key === `${prefix}/erroring`) {
+            let sent = false;
+            const body = new Readable({
+              read() {
+                if (sent) return;
+                sent = true;
+                this.push(Buffer.alloc(1000, 1));
+                setTimeout(() => this.destroy(new Error("ECONNRESET")), 300);
+              },
+            });
+            return Promise.resolve({ Body: body });
+          }
+          return realSend.call(this, command, ...rest);
+        };
+        const started = Date.now();
+        let error: unknown;
+        try {
+          await zipDownloadBatch({
+            storageConfig: config,
+            sourceBucket: config.bucket,
+            zipFileName: "broken",
+            watermarkConfig: {
+              enabled: true,
+              config: {
+                text: "X",
+                isTiled: false,
+                position: "middle-center",
+                rotation: 0,
+                color: "#000000",
+                fontSize: 12,
+                opacity: 0.5,
+              },
+              viewerData: {},
+            },
+            folderStructure: {
+              "/": {
+                name: "Root",
+                path: "/",
+                files: [
+                  { name: "big.bin", key: `${prefix}/big.bin` },
+                  {
+                    name: "Report.pdf",
+                    key: `${prefix}/a.pdf`,
+                    type: "pdf",
+                    numPages: 1,
+                    needsWatermark: true,
+                  },
+                  { name: "doc.docx", key: `${prefix}/erroring` },
+                  { name: "after.txt", key: `${prefix}/b.txt` },
+                ],
+              },
+            },
+          });
+        } catch (e) {
+          error = e;
+        } finally {
+          (S3Client.prototype as any).send = realSend;
+        }
+        assert(
+          error && String(error).includes("ECONNRESET"),
+          `rejects: ${error}`,
+        );
+        assert(Date.now() - started < 30000, "no hang");
+        const uploads = await client.send(
+          new ListMultipartUploadsCommand({
+            Bucket: config.bucket,
+            Prefix: "bulk-downloads/",
+          }),
+        );
+        const open = (uploads.Uploads ?? []).filter(
+          (u) =>
+            u.Key?.endsWith("/broken.zip") &&
+            (u.Initiated?.getTime() ?? 0) >= started - 1000,
+        );
+        assert(open.length === 0, `open multipart uploads: ${open.length}`);
+      },
+    );
 
     await check("a missing source object fails the batch", async () => {
       let failed = false;

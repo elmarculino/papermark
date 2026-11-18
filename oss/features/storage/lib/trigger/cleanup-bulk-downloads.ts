@@ -13,6 +13,8 @@ export const BULK_DOWNLOAD_PREFIX = "bulk-downloads/";
 const KEEP_MS = 4 * 24 * 60 * 60 * 1000;
 
 export async function deleteExpiredBulkDownloads(now = Date.now()) {
+  // Only the S3 transport writes zips (and has an S3 client).
+  if (process.env.NEXT_PUBLIC_UPLOAD_TRANSPORT !== "s3") return { deleted: 0 };
   const { bucket } = getStorageConfig();
   const client = getS3Client();
   let deleted = 0;

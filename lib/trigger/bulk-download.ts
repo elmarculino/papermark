@@ -4,7 +4,6 @@ import {
   getTeamStorageConfigById,
   type StorageConfig,
 } from "@/ee/features/storage/config";
-import { zipDownloadBatch } from "@/ee/features/storage/zip-download-batch";
 import { ItemType } from "@prisma/client";
 import {
   InvocationType,
@@ -507,6 +506,9 @@ async function processDownloadBatch({
 }: ProcessDownloadBatchParams): Promise<ProcessDownloadBatchResult> {
   // [fork] No download Lambda configured: build the zip in this worker.
   if (!storageConfig.lambdaFunctionName) {
+    const { zipDownloadBatch } = await import(
+      "@/ee/features/storage/zip-download-batch"
+    );
     return zipDownloadBatch({
       storageConfig,
       folderStructure,

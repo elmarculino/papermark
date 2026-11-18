@@ -9,7 +9,11 @@
  * presigned download URL valid for `expirationHours` is returned.
  */
 import type { StorageConfig } from "@/ee/features/storage/config";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  AbortMultipartUploadCommand,
+  GetObjectCommand,
+  ListMultipartUploadsCommand,
+} from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import archiver from "archiver";
@@ -18,6 +22,7 @@ import { PassThrough, Readable } from "node:stream";
 
 import { getS3Client } from "@/lib/files/aws-client";
 import type { BulkDownloadFolderStructure } from "@/lib/trigger/bulk-download";
+import { getFileNameWithPdfExtension } from "@/lib/utils";
 import { buildWatermarkedPdf } from "@/lib/utils/watermark-pdf";
 
 import { BULK_DOWNLOAD_PREFIX } from "./lib/trigger/cleanup-bulk-downloads";
@@ -57,6 +62,26 @@ function uniqueEntryName(
   }
 }
 
+async function abortOpenUploads(
+  client: ReturnType<typeof getS3Client>,
+  bucket: string,
+  key: string,
+) {
+  const { Uploads = [] } = await client.send(
+    new ListMultipartUploadsCommand({ Bucket: bucket, Prefix: key }),
+  );
+  for (const u of Uploads) {
+    if (u.Key !== key || !u.UploadId) continue;
+    await client.send(
+      new AbortMultipartUploadCommand({
+        Bucket: bucket,
+        Key: key,
+        UploadId: u.UploadId,
+      }),
+    );
+  }
+}
+
 export async function zipDownloadBatch({
   storageConfig: config,
   folderStructure,
@@ -67,9 +92,7 @@ export async function zipDownloadBatch({
 }: ZipDownloadBatchParams): Promise<{ downloadUrl: string }> {
   // One storage config for every team in this fork (oss/features/storage).
   const client = getS3Client();
-  const fileName = zipFileName.endsWith(".zip")
-    ? zipFileName
-    : `${zipFileName}.zip`;
+  const fileName = `${zipFileName}.zip`;
   const key = `${BULK_DOWNLOAD_PREFIX}${randomUUID()}/${fileName}`;
 
   const archive = archiver("zip", { zlib: { level: 6 } });
@@ -85,10 +108,38 @@ export async function zipDownloadBatch({
     },
   });
   const uploaded = upload.done();
-  // archiver reports errors on the archive stream; surface them as a rejection.
-  const archiveFailed = new Promise<never>((_, reject) =>
-    archive.on("error", reject),
-  );
+
+  // The first failure anywhere (archiver, upload, a source stream) settles
+  // `failed`; every wait below races it, so nothing is left hanging.
+  let fail: (error: unknown) => void = () => {};
+  const failed = new Promise<never>((_, reject) => (fail = reject));
+  failed.catch(() => {});
+  archive.on("error", (error) => fail(error));
+  uploaded.catch((error) => fail(error));
+  const guard = <T>(promise: Promise<T>) => Promise.race([promise, failed]);
+
+  let current: Readable | undefined;
+  // Appends one entry and waits until archiver has written that entry, so
+  // entries (and their memory) go through one at a time.
+  const add = (source: Buffer | Readable, name: string) =>
+    guard(
+      new Promise<void>((resolve, reject) => {
+        const onEntry = (entry: { name: string }) => {
+          if (entry.name !== name) return;
+          archive.off("entry", onEntry);
+          resolve();
+        };
+        archive.on("entry", onEntry);
+        if (source instanceof Readable) {
+          current = source;
+          source.on("error", (error) => {
+            reject(error);
+            fail(error);
+          });
+        }
+        archive.append(source, { name });
+      }),
+    );
 
   const fill = async () => {
     const used = new Set<string>();
@@ -98,44 +149,66 @@ export async function zipDownloadBatch({
     for (const folder of folders) {
       const dir = folder.path.replace(/^\/+|\/+$/g, "");
       if (dir && folder.files.length === 0) {
-        archive.append(Buffer.alloc(0), { name: `${dir}/` });
+        await add(Buffer.alloc(0), `${dir}/`);
       }
       for (const file of folder.files) {
-        const name = uniqueEntryName(used, folder.path, file.name);
-        const object = await client.send(
-          new GetObjectCommand({ Bucket: sourceBucket, Key: file.key }),
+        const watermark = Boolean(
+          watermarkConfig?.enabled &&
+          watermarkConfig.config &&
+          file.needsWatermark,
+        );
+        const isImage = file.type === "image";
+        // A watermarked image becomes a PDF, as in single downloads.
+        const name = uniqueEntryName(
+          used,
+          folder.path,
+          watermark && isImage
+            ? getFileNameWithPdfExtension(file.name)
+            : file.name,
+        );
+        const object = await guard(
+          client.send(
+            new GetObjectCommand({ Bucket: sourceBucket, Key: file.key }),
+          ),
         );
         if (!object.Body) throw new Error(`Empty object: ${file.key}`);
 
-        if (
-          watermarkConfig?.enabled &&
-          watermarkConfig.config &&
-          file.needsWatermark
-        ) {
-          const fileBytes = await object.Body.transformToByteArray();
+        if (watermark) {
+          const fileBytes = await guard(object.Body.transformToByteArray());
           const watermarked = await buildWatermarkedPdf({
             fileBytes,
-            fileType: file.type === "image" ? "image" : "pdf",
-            watermarkConfig: watermarkConfig.config,
-            viewerData: watermarkConfig.viewerData ?? {},
+            fileType: isImage ? "image" : "pdf",
+            watermarkConfig: watermarkConfig!.config,
+            viewerData: watermarkConfig!.viewerData ?? {},
             numPages: file.numPages ?? 1,
+            flatten: true,
           });
-          archive.append(Buffer.from(watermarked), { name });
+          await add(Buffer.from(watermarked), name);
         } else {
-          // One file at a time: wait until archiver has consumed this stream.
-          const stream = object.Body as Readable;
-          await new Promise<void>((resolve, reject) => {
-            stream.once("error", reject);
-            archive.once("entry", () => resolve());
-            archive.append(stream, { name });
-          });
+          await add(object.Body as Readable, name);
         }
       }
     }
-    await archive.finalize();
+    archive.finalize();
+    await guard(uploaded);
   };
 
-  await Promise.race([Promise.all([fill(), uploaded]), archiveFailed]);
+  try {
+    await fill();
+  } catch (error) {
+    // Tear down: no half-written multipart upload left in the bucket, no
+    // open source stream, no buffered parts kept in the worker.
+    fail(error);
+    archive.abort();
+    body.destroy();
+    current?.destroy();
+    await upload.abort().catch(() => {});
+    await uploaded.catch(() => {});
+    // lib-storage's abort() rejects done() without aborting a multipart upload
+    // it already started; the key is unique, so abort whatever is open on it.
+    await abortOpenUploads(client, config.bucket, key).catch(() => {});
+    throw error;
+  }
 
   const downloadUrl = await getSignedUrl(
     client,
