@@ -60,6 +60,8 @@ async function main() {
               },
               { name: "notes.txt", key: `${prefix}/b.txt` },
               { name: "notes.txt", key: `${prefix}/d.txt` },
+              { name: "Contrato: minuta.txt", key: `${prefix}/b.txt` },
+              { name: "http://example.com/x.txt", key: `${prefix}/b.txt` },
             ],
           },
           "/Legal/Contracts": {
@@ -88,9 +90,11 @@ async function main() {
       assert(
         entries.join("|") ===
           [
+            "Contrato_ minuta.txt",
             "Empty/",
             "Legal/Contracts/notes.txt",
             "Report.pdf",
+            "http___example.com_x.txt",
             "notes (2).txt",
             "notes.txt",
           ].join("|"),

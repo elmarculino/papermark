@@ -49,7 +49,9 @@ function uniqueEntryName(
   fileName: string,
 ): string {
   const dir = folderPath.replace(/^\/+|\/+$/g, "");
-  const safe = fileName.replace(/[\\/]/g, "_") || "file";
+  // No path separators, and no ":" (archiver strips a leading "word:" from
+  // entry names, and Windows can't store it).
+  const safe = fileName.replace(/[\\/:]/g, "_") || "file";
   const dot = safe.lastIndexOf(".");
   const [stem, ext] =
     dot > 0 ? [safe.slice(0, dot), safe.slice(dot)] : [safe, ""];
@@ -124,10 +126,13 @@ export async function zipDownloadBatch({
   const add = (source: Buffer | Readable, name: string) =>
     guard(
       new Promise<void>((resolve, reject) => {
+        // Entries are added one at a time, so the next entry event is this
+        // one; a different name means archiver rewrote it: fail, don't wait.
         const onEntry = (entry: { name: string }) => {
-          if (entry.name !== name) return;
           archive.off("entry", onEntry);
-          resolve();
+          if (entry.name === name) resolve();
+          else
+            reject(new Error(`zip entry "${name}" written as "${entry.name}"`));
         };
         archive.on("entry", onEntry);
         if (source instanceof Readable) {
