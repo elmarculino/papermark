@@ -6,8 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import type { LoginMethods } from "@/ee/_shared/login-methods";
+import { signInWithPasskey } from "@/ee/passkeys/client";
 import { SSOLogin } from "@/ee/features/security/sso";
-import { signInWithPasskey } from "@teamhanko/passkeys-next-auth-provider/client";
 import { AlertCircle } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { toast } from "sonner";
@@ -217,12 +217,12 @@ export default function Login({ methods }: { methods: LoginMethods }) {
                 onClick={() => {
                   setLastUsed("passkey");
                   setClickedMethod("passkey");
+                  // [fork] SimpleWebAuthn passkeys (oss/passkeys)
                   signInWithPasskey({
-                    // [fork] the tenant the server checked (oss/_shared/login-methods)
-                    tenantId: methods.hankoTenantId as string,
-                  }).then(() => {
-                    setClickedMethod(undefined);
-                  });
+                    ...(next && next.length > 0 ? { callbackUrl: next } : {}),
+                  })
+                    .catch(() => toast.error("Passkey sign-in failed"))
+                    .finally(() => setClickedMethod(undefined));
                 }}
                 variant="outline"
                 loading={clickedMethod === "passkey"}

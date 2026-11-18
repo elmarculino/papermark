@@ -1,0 +1,16 @@
+// [fork] WebAuthn passkeys (oss/passkeys), replacing the Hanko passkey API.
+model PasskeyCredential {
+  id         String    @id // WebAuthn credential ID, base64url
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKey  Bytes
+  counter    BigInt    @default(0)
+  transports String[]
+  deviceType String // "singleDevice" | "multiDevice"
+  backedUp   Boolean   @default(false)
+  name       String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+}
