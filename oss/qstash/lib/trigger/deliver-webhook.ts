@@ -81,7 +81,7 @@ const redact = (rawUrl: string) => {
 
 export const deliverWebhookTask = task({
   id: "deliver-webhook",
-  retry: { maxAttempts: 3, minTimeoutInMs: 10_000, factor: 3 },
+  retry: { maxAttempts: 3 },
   run: async ({
     webhookId,
     payload,
