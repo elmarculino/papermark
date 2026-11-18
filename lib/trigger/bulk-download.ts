@@ -504,6 +504,21 @@ async function processDownloadBatch({
   zipFileName,
   expirationHours = 72,
 }: ProcessDownloadBatchParams): Promise<ProcessDownloadBatchResult> {
+  // [fork] No download Lambda configured: build the zip in this worker.
+  if (!storageConfig.lambdaFunctionName) {
+    const { zipDownloadBatch } = await import(
+      "@/ee/features/storage/zip-download-batch"
+    );
+    return zipDownloadBatch({
+      storageConfig,
+      folderStructure,
+      sourceBucket,
+      watermarkConfig,
+      zipFileName,
+      expirationHours,
+    });
+  }
+
   const command = new InvokeCommand({
     FunctionName: storageConfig.lambdaFunctionName,
     InvocationType: InvocationType.RequestResponse,

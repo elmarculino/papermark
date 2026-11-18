@@ -167,6 +167,7 @@ async function main() {
       "oss/features/conversions/lib/trigger/convert-files.ts",
       "oss/features/ai/lib/trigger.ts",
       "oss/qstash/lib/trigger/deliver-webhook.ts",
+      "oss/features/storage/lib/trigger/cleanup-bulk-downloads.ts",
     ]) {
       assert(rel.includes(expected), `discovers ${expected}`);
     }
@@ -212,8 +213,9 @@ async function main() {
     );
     assert(m, `ready line format: ${ready}`);
     assert(Number(m[1]) === allTasks().length && Number(m[1]) >= 22, ready);
-    // cleanup-expired-exports + the data room digests (oss/qstash)
-    assert(Number(m[3]) === 3, `three schedules: ${ready}`);
+    // cleanup-expired-exports, the data room digests (oss/qstash) and
+    // cleanup-bulk-downloads (oss/features/storage)
+    assert(Number(m[3]) === 4, `four schedules: ${ready}`);
     assert(getTask("cleanup-expired-exports")?.kind === "scheduled", "cron task");
   });
 
