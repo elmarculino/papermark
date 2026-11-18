@@ -31,3 +31,24 @@ export async function throwsWith(
 
 export const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Points the layer at throwaway schemas (`papermark_jobs_<tag>`, `dbos_<tag>`)
+ * and drops them so a verify script starts from nothing. Call before anything
+ * touches the database.
+ */
+export async function useIsolatedSchemas(tag: string): Promise<void> {
+  process.env.JOBS_SCHEMA = `papermark_jobs_${tag}`;
+  process.env.JOBS_DBOS_SCHEMA = `dbos_${tag}`;
+  const { jobsDatabaseUrl, jobsSchema, dbosSchema } = await import("./config");
+  const { Client } = await import("pg");
+  const client = new Client({ connectionString: jobsDatabaseUrl() });
+  await client.connect();
+  try {
+    for (const schema of [jobsSchema(), dbosSchema()]) {
+      await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    }
+  } finally {
+    await client.end();
+  }
+}
