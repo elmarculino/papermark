@@ -41,10 +41,11 @@ Upstream base: `papermark/papermark@ed19717` (2026-08-28). There are 104 distinc
 ## Queue (production readiness)
 
 1. ✅ Email over SMTP (`lib/resend.ts`, `SMTP_*` / `EMAIL_FROM`).
-2. Dockerfile + Komodo stack (app, jobs worker, Postgres, storage, Redis + REST adapter, Gotenberg).
+2. ✅ Dockerfile (one image for app, jobs worker and migrations; build-time settings as a BuildKit secret). First install: old-elgin at `papermark.apto` (compose in `elmarculino/home-stacks`, `papermark/`). A Komodo stack for a dedicated server is still to do. Fixed on the way: the middleware treated the self-hosted host as a custom domain (`NEXT_PUBLIC_APP_BASE_HOST` is now an app host); the first sign-in failed without a QStash token (welcome mail skipped); on https the session cookie name didn't match what the middleware reads (`__Secure-` now follows `NEXTAUTH_URL`).
 3. Feature flags from env instead of Vercel Edge Config.
 4. Tinybird → plain ClickHouse: 5 tables from `lib/tinybird/datasources`, 15 queries from `lib/tinybird/endpoints`, swap `publish.ts`/`pipes.ts`. Don't use Tinybird Local (proprietary TSML license, production use only within Tinybird's usage limits).
 5. Email templates: replace Papermark, Inc. branding/address in `components/emails`.
+6. Passkeys without Hanko: replace `lib/hanko.ts`, `lib/api/auth/passkey.ts` and the Hanko NextAuth provider with SimpleWebAuthn (MIT): a passkey table, challenges in Redis, a `passkey` credentials provider. Needs https with a certificate the device trusts.
 
 ## Jobs: DBOS layer, done
 
