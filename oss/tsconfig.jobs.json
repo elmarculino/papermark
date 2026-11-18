@@ -1,0 +1,22 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "incremental": false,
+    "paths": {
+      "@trigger.dev/sdk": ["../oss/jobs/sdk/index.ts"],
+      "@trigger.dev/react-hooks": ["../oss/jobs/react-hooks/index.ts"],
+      "@/ee/*": ["../oss/*"],
+      "@/*": ["../*"]
+    }
+  },
+  "include": [
+    "../next-env.d.ts",
+    "../lib/**/*",
+    "../pages/api/**/*",
+    "../oss/**/*",
+    "../trigger.config.ts",
+    "../components/links/link-sheet/agreement-panel/**/*"
+  ],
+  "exclude": ["../node_modules", "../**/*.verify.ts", "../**/*.verify.tsx"]
+}
