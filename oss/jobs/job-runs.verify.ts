@@ -127,6 +127,31 @@ async function main() {
     }
   });
 
+  await check("hooks: pollIntervalFor", async () => {
+    const { pollIntervalFor, RunsHttpError } = await import("./react-hooks");
+    const run = (status: string) => ({ status }) as any;
+    assert(pollIntervalFor(undefined) === 1500, "undefined runs");
+    assert(
+      pollIntervalFor([run("COMPLETED"), run("EXECUTING")]) === 1500,
+      "non-final",
+    );
+    assert(
+      pollIntervalFor([run("COMPLETED"), run("FAILED")]) === 0,
+      "all final",
+    );
+    for (const status of [401, 403, 404]) {
+      assert(
+        pollIntervalFor(undefined, new RunsHttpError(status)) === 0,
+        `${status}`,
+      );
+    }
+    assert(pollIntervalFor(undefined, new RunsHttpError(500)) === 1500, "500");
+    assert(
+      pollIntervalFor(undefined, new Error("network")) === 1500,
+      "network",
+    );
+  });
+
   await worker.stop();
   await destroyClient();
   await getPool().end();

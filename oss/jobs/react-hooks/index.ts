@@ -1,6 +1,8 @@
 "use client";
 
 /** Polling replacements for `@trigger.dev/react-hooks`, backed by `/api/job-runs`. */
+import { useRef } from "react";
+
 import useSWR from "swr";
 
 import { type RunFlags, type RunStatus, isFinalStatus } from "../status";
@@ -35,6 +37,29 @@ const POLL_MS = 1500;
 
 type WireRun = Omit<RealtimeRun, "createdAt"> & { createdAt: string };
 
+export class RunsHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`Failed to load runs (HTTP ${status})`);
+  }
+}
+
+/** Auth and lookup failures don't heal by retrying. */
+const isTerminalError = (error?: Error) =>
+  error instanceof RunsHttpError && [401, 403, 404].includes(error.status);
+
+/** Polling interval: 1500 ms while any run isn't final (or none loaded), else 0. */
+export function pollIntervalFor(
+  runs: Pick<RealtimeRun, "status">[] | undefined,
+  error?: Error,
+): number {
+  if (isTerminalError(error)) return 0;
+  return !runs ||
+    runs.length === 0 ||
+    runs.some((r) => !isFinalStatus(r.status as RunStatus))
+    ? POLL_MS
+    : 0;
+}
+
 async function fetchRuns(
   query: string,
   accessToken: string,
@@ -42,9 +67,7 @@ async function fetchRuns(
   const res = await fetch(`/api/job-runs?${query}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) {
-    throw new Error(`Failed to load runs (HTTP ${res.status})`);
-  }
+  if (!res.ok) throw new RunsHttpError(res.status);
   const { runs } = (await res.json()) as { runs: WireRun[] };
   return runs.map((run) => ({ ...run, createdAt: new Date(run.createdAt) }));
 }
@@ -52,16 +75,21 @@ async function fetchRuns(
 function useRuns(query: string | undefined, opts?: Options) {
   const token = opts?.accessToken;
   const active = opts?.enabled !== false && !!token && !!query;
+  // SWR's refreshInterval callback only sees the data, so the last error
+  // (cleared when a new fetch starts) is tracked here.
+  const lastError = useRef<Error | undefined>(undefined);
   return useSWR<RealtimeRun[], Error>(
     active ? ["job-runs", query, token] : null,
-    () => fetchRuns(query!, token!),
+    () => {
+      lastError.current = undefined;
+      return fetchRuns(query!, token!);
+    },
     {
-      refreshInterval: (runs) =>
-        !runs ||
-        runs.length === 0 ||
-        runs.some((r) => !isFinalStatus(r.status as RunStatus))
-          ? POLL_MS
-          : 0,
+      refreshInterval: (runs) => pollIntervalFor(runs, lastError.current),
+      onError: (error) => {
+        lastError.current = error;
+      },
+      shouldRetryOnError: (error) => !isTerminalError(error),
     },
   );
 }
