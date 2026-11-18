@@ -57,14 +57,33 @@ async function main() {
     );
   });
 
-  await check("markStarted keeps the first timestamp", async () => {
-    await store.markStarted("run_1");
+  await check("markStarted: only while DBOS has the run PENDING; keeps the first timestamp", async () => {
+    const setDbosStatus = (status: string) =>
+      getPool().query(
+        `INSERT INTO dbos_store.workflow_status (workflow_uuid, status) VALUES ('run_1', $1)
+         ON CONFLICT (workflow_uuid) DO UPDATE SET status = EXCLUDED.status`,
+        [status],
+      );
+    const bodyStarts = async () =>
+      (
+        await getPool().query<{ n: number }>(
+          "SELECT body_starts AS n FROM papermark_jobs_store.runs WHERE id = 'run_1'",
+        )
+      ).rows[0].n;
+    assert((await store.markStarted("run_1")) === false, "no DBOS row");
+    await setDbosStatus("CANCELLED");
+    assert((await store.markStarted("run_1")) === false, "canceled");
+    assert((await store.getRunRow("run_1"))?.startedAt === null, "not set");
+    assert((await bodyStarts()) === 0, "not counted");
+    await setDbosStatus("PENDING");
+    assert((await store.markStarted("run_1")) === true, "pending");
     const first = (await store.getRunRow("run_1"))?.startedAt;
     assert(first instanceof Date, "set");
     await sleep(20);
     await store.markStarted("run_1");
     const second = (await store.getRunRow("run_1"))?.startedAt;
     assert(first.getTime() === second?.getTime(), "unchanged");
+    assert((await bodyStarts()) === 2, `counted ${await bodyStarts()}`);
   });
 
   await check("findRunRows filters by tag and sorts newest first", async () => {

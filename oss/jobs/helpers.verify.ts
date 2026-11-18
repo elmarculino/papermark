@@ -12,7 +12,9 @@ import {
   workerDbPoolSize,
 } from "./config";
 import { parseDelay, parsePeriodMs } from "./duration";
+import { RunCanceledError } from "./context";
 import { backoffMs, resolveRetry } from "./retry";
+import { Semaphore } from "./semaphore";
 import { runFlags, toRunStatus } from "./status";
 import { assert, check, throwsWith } from "./testing";
 
@@ -167,6 +169,21 @@ async function main() {
       d.maxAttempts === 3 && d.minTimeoutInMs === 1000 && d.factor === 2,
       "built-in default",
     );
+  });
+
+  await check("Semaphore skips a waiter canceled before its grant", async () => {
+    const sem = new Semaphore(1);
+    const release = await sem.acquire();
+    let canceled = false;
+    const outcome = sem.acquire(() => canceled).then(
+      () => "granted",
+      (e) => (e instanceof RunCanceledError ? "canceled" : String(e)),
+    );
+    const next = sem.acquire();
+    canceled = true;
+    release();
+    assert((await outcome) === "canceled", `canceled waiter: ${await outcome}`);
+    (await next)();
   });
 
   console.log("helpers.verify: all checks passed");

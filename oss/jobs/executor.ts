@@ -118,7 +118,8 @@ async function executeRun(
     release = await sem.acquire(() => ctx.canceled);
     stopPoller();
     stopPoller = startCancelPoller(ctx, CANCEL_POLL_MS);
-    await markStarted(row.id);
+    // A run canceled while it waited for the slot ends here, without its body.
+    if (!(await markStarted(row.id))) throw new RunCanceledError();
     const retry = resolveRetry(task.retry, row.maxAttempts ?? undefined);
     for (let n = 1; ; n++) {
       try {

@@ -9,7 +9,7 @@ import path from "node:path";
 import { queue, task } from "./sdk";
 import { runWorker } from "./worker";
 
-function bump(name: string): void {
+function bump(name: string): number {
   const file = path.join(process.env.WORKER_FIXTURE_DIR!, name);
   let n = 0;
   try {
@@ -18,6 +18,7 @@ function bump(name: string): void {
     // First run.
   }
   writeFileSync(file, String(n + 1));
+  return n + 1;
 }
 
 task({
@@ -55,21 +56,22 @@ task({
   queue: poisonQueue,
   run: async () => {
     bump("poison");
-    // Holds the worker's only slot long enough for fx-other's queue to claim
+    // Holds the worker's only slot long enough for fx-steady's queue to claim
     // its run, which then waits for the slot.
     await new Promise((resolve) => setTimeout(resolve, 2500));
     process.exit(1);
   },
 });
 
-// A run on another queue: claimed while the poison run holds the slot.
+// A run on another queue: its first start is cut short by a worker kill,
+// then it is claimed again on every restart while the poison run holds the slot.
 task({
-  id: "fx-other",
-  queue: queue({ name: "fx-other-q" }),
+  id: "fx-steady",
+  queue: queue({ name: "fx-steady-q" }),
   retry: { maxAttempts: 1 },
   run: async () => {
-    bump("other");
-    return "other done";
+    if (bump("steady") === 1) await new Promise(() => {});
+    return "steady done";
   },
 });
 

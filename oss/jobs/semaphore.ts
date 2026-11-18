@@ -1,6 +1,7 @@
 /**
  * Worker-wide cap on runs executing at once, across every queue (DBOS's
- * `workerConcurrency` is per queue). Waiters are served first in, first out.
+ * `workerConcurrency` is per queue). Waiters are served first in, first out;
+ * a waiter already canceled when its turn comes is rejected and skipped.
  */
 import { RunCanceledError } from "./context";
 
@@ -8,7 +9,8 @@ const CANCEL_CHECK_MS = 500;
 
 export class Semaphore {
   private free: number;
-  private readonly waiters: (() => void)[] = [];
+  /** Each grants its waiter the slot, or rejects a canceled one and returns false. */
+  private readonly waiters: (() => boolean)[] = [];
 
   constructor(slots: number) {
     if (!Number.isInteger(slots) || slots < 1) {
@@ -33,7 +35,12 @@ export class Semaphore {
       let timer: ReturnType<typeof setInterval> | undefined;
       const grant = () => {
         clearInterval(timer);
+        if (isCanceled?.()) {
+          reject(new RunCanceledError());
+          return false;
+        }
         resolve(this.releaser());
+        return true;
       };
       this.waiters.push(grant);
       if (isCanceled) {
@@ -53,9 +60,11 @@ export class Semaphore {
     return () => {
       if (released) return;
       released = true;
-      const next = this.waiters.shift();
-      if (next) next();
-      else this.free++;
+      let next;
+      while ((next = this.waiters.shift())) {
+        if (next()) return;
+      }
+      this.free++;
     };
   }
 }

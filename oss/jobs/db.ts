@@ -77,6 +77,8 @@ function layerDdl(s: string): string[] {
       payload jsonb, metadata jsonb NOT NULL DEFAULT '{}', parent_id text,
       queue_name text NOT NULL, concurrency_key text, max_attempts int,
       started_at timestamptz, created_at timestamptz NOT NULL DEFAULT now())`,
+    // How many claims reached the body; DBOS's recovery count is synced to it.
+    `ALTER TABLE ${s}.runs ADD COLUMN IF NOT EXISTS body_starts int NOT NULL DEFAULT 0`,
     `CREATE INDEX IF NOT EXISTS runs_tags_idx ON ${s}.runs USING gin (tags)`,
     `CREATE INDEX IF NOT EXISTS runs_task_created_idx ON ${s}.runs (task_id, created_at DESC)`,
     `CREATE TABLE IF NOT EXISTS ${s}.idempotency_keys (

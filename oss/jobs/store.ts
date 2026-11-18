@@ -137,28 +137,40 @@ export async function mergeRunMetadata(
   );
 }
 
-export async function markStarted(id: string): Promise<void> {
+/**
+ * Marks the run's body as starting (counted in `body_starts`), only while
+ * DBOS still has it PENDING: false means it was canceled (or otherwise moved
+ * on) while it waited for a slot, and the body must not run. `started_at`
+ * keeps the first start.
+ */
+export async function markStarted(id: string): Promise<boolean> {
   await ensureJobsSchema();
-  await getPool().query(
-    `UPDATE ${jobsSchema()}.runs SET started_at = now() WHERE id = $1 AND started_at IS NULL`,
+  // FOR SHARE: a cancel committing meanwhile is waited for and then seen.
+  const { rowCount } = await getPool().query(
+    `UPDATE ${jobsSchema()}.runs
+     SET started_at = COALESCE(started_at, now()), body_starts = body_starts + 1
+     WHERE id = $1 AND EXISTS (
+       SELECT 1 FROM ${dbosSchema()}.workflow_status
+       WHERE workflow_uuid = $1 AND status = 'PENDING' FOR SHARE)`,
     [id],
   );
+  return rowCount === 1;
 }
 
 /**
- * Zeroes DBOS's recovery attempts of claimed runs whose body never started.
- * DBOS counts every claim, and a run claimed on one queue can wait for the
- * worker-wide slot through several worker crashes; without this it would be
- * dead-lettered (CRASHED) without having run. Runs that started keep their
- * count, so a run that kills the worker still ends CRASHED.
+ * Sets DBOS's recovery attempts of PENDING runs to the number of times their
+ * body actually started. DBOS counts every claim, and a run claimed on one
+ * queue can wait for the worker-wide slot through several worker crashes;
+ * those waiting claims would otherwise dead-letter it (CRASHED). A run whose
+ * body keeps killing the worker still reaches CRASHED.
  */
-export async function resetUnstartedRecoveryAttempts(): Promise<void> {
+export async function syncRecoveryAttempts(): Promise<void> {
   await ensureJobsSchema();
   await getPool().query(
-    `UPDATE ${dbosSchema()}.workflow_status w SET recovery_attempts = 0
+    `UPDATE ${dbosSchema()}.workflow_status w SET recovery_attempts = r.body_starts
      FROM ${jobsSchema()}.runs r
      WHERE r.id = w.workflow_uuid AND w.status = 'PENDING'
-       AND r.started_at IS NULL AND w.recovery_attempts > 0`,
+       AND w.recovery_attempts <> r.body_starts`,
   );
 }
 

@@ -70,6 +70,19 @@ async function main() {
     },
   });
 
+  // Holders that finish when the test opens the gate.
+  let openGate = () => {};
+  const gate = new Promise<void>((resolve) => (openGate = resolve));
+  const tGated = task({ id: "t-gated", run: () => gate });
+  let lateWaiterRan = false;
+  const tLateWaiter = task({
+    id: "t-late-waiter",
+    queue: queue({ name: "q-w" }),
+    run: async () => {
+      lateWaiterRan = true;
+    },
+  });
+
   const worker = await startTestWorker({ concurrency: 2 });
   const client = await getClient();
   const overlap = (a: string, b: string) => {
@@ -163,6 +176,32 @@ async function main() {
       for (const { id } of holders) await waitForStatus(id, ["COMPLETED"]);
       await sleep(500);
       assert(!waiterRan, "the canceled run's body ran");
+      assert(
+        (await waitForStatus(waiter.id, ["CANCELED", "COMPLETED"])) ===
+          "CANCELED",
+        "status",
+      );
+    },
+  );
+
+  await check(
+    "a run canceled while waiting never runs, even if a slot frees before the cancel poll",
+    async () => {
+      const holders = await Promise.all([tGated.trigger({}), tGated.trigger({})]);
+      for (const { id } of holders) await waitForStatus(id, ["EXECUTING"]);
+      // Another queue claims it, so it waits for a worker slot.
+      const waiter = await tLateWaiter.trigger({});
+      const deadline = Date.now() + 10_000;
+      while ((await client.getWorkflow(waiter.id))?.status !== "PENDING") {
+        assert(Date.now() < deadline, "waiter claimed");
+        await sleep(50);
+      }
+      await client.cancelWorkflow(waiter.id);
+      // Well within the waiting run's 5 s cancel poll.
+      openGate();
+      for (const { id } of holders) await waitForStatus(id, ["COMPLETED"]);
+      await sleep(1000);
+      assert(!lateWaiterRan, "the canceled run's body ran");
       assert(
         (await waitForStatus(waiter.id, ["CANCELED", "COMPLETED"])) ===
           "CANCELED",
