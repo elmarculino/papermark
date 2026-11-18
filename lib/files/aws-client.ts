@@ -6,6 +6,13 @@ import {
 import { LambdaClient } from "@aws-sdk/client-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 
+// [fork] No default CRC32 checksums: S3-compatible stores (SeaweedFS, MinIO)
+// reject the checksum the SDK signs into presigned PUT URLs (BadDigest).
+const S3_COMPAT_CHECKSUMS = {
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
+} as const;
+
 export const getS3Client = (storageRegion?: string) => {
   const NEXT_PUBLIC_UPLOAD_TRANSPORT = process.env.NEXT_PUBLIC_UPLOAD_TRANSPORT;
 
@@ -18,6 +25,7 @@ export const getS3Client = (storageRegion?: string) => {
   return new S3Client({
     endpoint: config.endpoint || undefined,
     forcePathStyle: config.forcePathStyle,
+    ...S3_COMPAT_CHECKSUMS,
     region: config.region,
     credentials: {
       accessKeyId: config.accessKeyId,
@@ -38,6 +46,7 @@ export const getS3ClientForTeam = async (teamId: string) => {
   return new S3Client({
     endpoint: config.endpoint || undefined,
     forcePathStyle: config.forcePathStyle,
+    ...S3_COMPAT_CHECKSUMS,
     region: config.region,
     credentials: {
       accessKeyId: config.accessKeyId,
@@ -101,6 +110,7 @@ export const getTeamS3ClientAndConfig = async (teamId: string) => {
   const client = new S3Client({
     endpoint: config.endpoint || undefined,
     forcePathStyle: config.forcePathStyle,
+    ...S3_COMPAT_CHECKSUMS,
     region: config.region,
     credentials: {
       accessKeyId: config.accessKeyId,

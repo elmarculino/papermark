@@ -11,11 +11,15 @@ import {
 } from "@/ee/features/storage/config";
 import { MultiRegionS3Store } from "@/ee/features/storage/s3-store";
 import {
+  AbortMultipartUploadCommand,
   CreateBucketCommand,
+  CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
+  UploadPartCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Upload } from "@tus/utils";
 import { Readable } from "node:stream";
 
@@ -106,6 +110,63 @@ async function main() {
   );
   await client.send(
     new DeleteObjectCommand({ Bucket: config.bucket, Key: id }),
+  );
+
+  // Browser-style presigned PUTs (single upload and multipart parts), as
+  // pages/api/file/s3/get-presigned-post-url.ts and multipart.ts sign them.
+  // S3-compatible stores reject a checksum signed into the URL (BadDigest).
+  const putKey = `team-verify/doc-verify/presigned-${Date.now()}.pdf`;
+  const putUrl = await getSignedUrl(
+    teamClient,
+    new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: putKey,
+      ContentType: "application/pdf",
+      ContentDisposition: 'attachment; filename="agreement.pdf"',
+    }),
+    { expiresIn: 600 },
+  );
+  const putRes = await fetch(putUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="agreement.pdf"',
+    },
+    body: "%PDF-1.4 presigned",
+  });
+  assert(
+    putRes.ok,
+    `presigned PUT: ${putRes.status} ${(await putRes.text()).slice(0, 200)}`,
+  );
+  await client.send(
+    new DeleteObjectCommand({ Bucket: config.bucket, Key: putKey }),
+  );
+
+  const mpKey = `team-verify/doc-verify/presigned-mp-${Date.now()}.bin`;
+  const { UploadId } = await teamClient.send(
+    new CreateMultipartUploadCommand({ Bucket: config.bucket, Key: mpKey }),
+  );
+  const partUrl = await getSignedUrl(
+    teamClient,
+    new UploadPartCommand({
+      Bucket: config.bucket,
+      Key: mpKey,
+      UploadId,
+      PartNumber: 1,
+    }),
+    { expiresIn: 600 },
+  );
+  const partRes = await fetch(partUrl, { method: "PUT", body: "part one" });
+  assert(
+    partRes.ok,
+    `presigned part PUT: ${partRes.status} ${(await partRes.text()).slice(0, 200)}`,
+  );
+  await teamClient.send(
+    new AbortMultipartUploadCommand({
+      Bucket: config.bucket,
+      Key: mpKey,
+      UploadId,
+    }),
   );
 
   console.log("storage.verify: ok");
