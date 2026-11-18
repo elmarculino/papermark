@@ -1,5 +1,7 @@
 import { Webhook } from "@prisma/client";
 
+import { deliverWebhookTask } from "@/ee/qstash/lib/trigger/deliver-webhook";
+
 import { qstash } from "@/lib/cron";
 
 import { createWebhookSignature } from "./signature";
@@ -38,12 +40,15 @@ export const sendWebhooks = async ({
   // webhooks in the batch from being delivered.
   const results = await Promise.allSettled(
     webhooks.map((webhook) =>
-      publishWebhookEventToQStash({ webhook, payload }),
+      // [fork] Without QStash, deliver through the jobs layer (oss/qstash).
+      process.env.QSTASH_TOKEN
+        ? publishWebhookEventToQStash({ webhook, payload })
+        : deliverWebhookTask.trigger({ webhookId: webhook.pId, payload }),
     ),
   );
 
-  const fulfilled: Awaited<ReturnType<typeof publishWebhookEventToQStash>>[] =
-    [];
+  // [fork] QStash message or jobs-layer run handle; callers ignore it.
+  const fulfilled: unknown[] = [];
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
     if (result.status === "fulfilled") {
