@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { useTeam } from "@/context/team-context";
+import { PUBLIC_LINK_BASE_URL } from "@/ee/_shared/public-host";
 import { Agreement } from "@prisma/client";
 import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { toast } from "sonner";
@@ -677,7 +678,7 @@ export default function AgreementSheet({
           const linkId = document.links[0].id;
           setData((prevData) => ({
             ...prevData,
-            link: `https://www.papermark.com/view/${linkId}`,
+            link: `${PUBLIC_LINK_BASE_URL}/view/${linkId}`,
           }));
         }
       } catch (error) {

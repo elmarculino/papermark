@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 
 import { useEffect, useState } from "react";
 
+import { PUBLIC_LINK_BASE_URL } from "@/ee/_shared/public-host";
 import WorkflowAccessView from "@/ee/features/workflows/components/workflow-access-view";
 import { Brand, DataroomBrand, DataroomDocument } from "@prisma/client";
 import Cookies from "js-cookie";
@@ -139,7 +140,7 @@ export const getStaticProps = async (context: GetStaticPropsContext) => {
             metaTitle: publicMeta.metaTitle,
             metaDescription: publicMeta.metaDescription,
             metaImage: publicMeta.metaImage,
-            metaUrl: `https://www.papermark.com/view/${linkId}`,
+            metaUrl: `${PUBLIC_LINK_BASE_URL}/view/${linkId}`,
             metaFavicon: publicMeta.metaFavicon,
           },
           showPoweredByBanner: false,
@@ -233,7 +234,7 @@ export const getStaticProps = async (context: GetStaticPropsContext) => {
             metaDescription: publicMeta.metaDescription,
             metaImage: publicMeta.metaImage,
             metaFavicon: publicMeta.metaFavicon,
-            metaUrl: `https://www.papermark.com/view/${linkId}`,
+            metaUrl: `${PUBLIC_LINK_BASE_URL}/view/${linkId}`,
           },
           showPoweredByBanner: link.showBanner || teamPlan === "free",
           showAccountCreationSlide: link.showBanner || teamPlan === "free",
@@ -315,7 +316,7 @@ export const getStaticProps = async (context: GetStaticPropsContext) => {
             metaDescription: publicMeta.metaDescription,
             metaImage: publicMeta.metaImage,
             metaFavicon: publicMeta.metaFavicon,
-            metaUrl: `https://www.papermark.com/view/${linkId}`,
+            metaUrl: `${PUBLIC_LINK_BASE_URL}/view/${linkId}`,
           },
           showPoweredByBanner: false,
           showAccountCreationSlide: false,

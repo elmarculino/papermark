@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { useTeam } from "@/context/team-context";
+import { PUBLIC_LINK_HOST } from "@/ee/_shared/public-host";
 import { PlanEnum } from "@/ee/stripe/constants";
 import { Domain, LinkType } from "@prisma/client";
 import { ShuffleIcon } from "lucide-react";
@@ -216,7 +217,7 @@ export default function DomainSection({
           </SelectTrigger>
           <SelectContent className="flex w-full rounded-md border border-input bg-white text-foreground placeholder-muted-foreground focus:border-muted-foreground focus:outline-none focus:ring-inset focus:ring-muted-foreground dark:border-gray-500 dark:bg-gray-800 focus:dark:bg-transparent sm:text-sm">
             <SelectItem value="papermark.com" className="hover:bg-muted">
-              papermark.com
+              {PUBLIC_LINK_HOST}
             </SelectItem>
             {linkType === "DOCUMENT_LINK" && (
               <>

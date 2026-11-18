@@ -8,6 +8,38 @@ if (jobsBackend !== "dbos" && jobsBackend !== "trigger") {
   );
 }
 
+// Build-time file storage for what upstream keeps in Vercel Blob (logos,
+// preview images, visit exports): "s3" aliases @vercel/blob to oss/blob.
+const blobBackend = process.env.BLOB_BACKEND || "s3";
+if (blobBackend !== "s3" && blobBackend !== "vercel") {
+  throw new Error(
+    `BLOB_BACKEND must be "s3" or "vercel", got "${blobBackend}"`,
+  );
+}
+
+// Packages replaced by fork code at build time (exact import specifiers).
+const forkAliases = {
+  ...(jobsBackend === "dbos"
+    ? {
+        "@trigger.dev/sdk": "./oss/jobs/sdk/index.ts",
+        "@trigger.dev/react-hooks": "./oss/jobs/react-hooks/index.ts",
+      }
+    : {}),
+  ...(blobBackend === "s3"
+    ? {
+        "@vercel/blob": "./oss/blob/server.ts",
+        "@vercel/blob/client": "./oss/blob/client.ts",
+      }
+    : {}),
+};
+
+// Node-free entry points for the browser build (client code imports
+// `getDownloadUrl` and `upload` from these packages).
+const browserForkAliases = {
+  "@vercel/blob": "./oss/blob/browser.ts",
+  "@vercel/blob/client": "./oss/blob/client-browser.ts",
+};
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -374,21 +406,17 @@ const nextConfig = {
         : [config.externals].filter(Boolean);
       externals.push("oidc-provider", "koa", "@dbos-inc/dbos-sdk", "pg");
       // Next externalizes node_modules packages before resolve.alias applies,
-      // which would leave the real SDK required at runtime. In dbos mode the
-      // two aliased entry points must be bundled (resolved to the layer).
-      config.externals =
-        jobsBackend === "dbos"
-          ? externals.map((external) =>
-              typeof external === "function"
-                ? (data, callback) =>
-                    data &&
-                    (data.request === "@trigger.dev/sdk" ||
-                      data.request === "@trigger.dev/react-hooks")
-                      ? callback()
-                      : external(data, callback)
-                : external,
-            )
-          : externals;
+      // which would leave the real packages required at runtime. Aliased entry
+      // points must be bundled (resolved to the fork code). Assumes Next 14's
+      // single-object, promise-style externals handler.
+      config.externals = externals.map((external) =>
+        typeof external === "function"
+          ? (data, callback) =>
+              data && Object.hasOwn(forkAliases, data.request)
+                ? callback()
+                : external(data, callback)
+          : external,
+      );
     }
 
     // Stub out @google-cloud/kms - it's an optional dependency of @libpdf/core
@@ -409,16 +437,18 @@ const nextConfig = {
       // Server-only jobs dependencies must never reach the client bundle.
       ...(isServer ? {} : { "@dbos-inc/dbos-sdk": false, pg: false }),
       // `$` = exact match, so `@trigger.dev/sdk/v3` stays the real SDK.
-      ...(jobsBackend === "dbos"
-        ? {
-            "@trigger.dev/sdk$": fileURLToPath(
-              new URL("./oss/jobs/sdk/index.ts", import.meta.url),
+      ...Object.fromEntries(
+        Object.entries(forkAliases).map(([request, path]) => [
+          `${request}$`,
+          fileURLToPath(
+            new URL(
+              // Browser builds get Node-free entry points for the blob package.
+              (!isServer && browserForkAliases[request]) || path,
+              import.meta.url,
             ),
-            "@trigger.dev/react-hooks$": fileURLToPath(
-              new URL("./oss/jobs/react-hooks/index.ts", import.meta.url),
-            ),
-          }
-        : {}),
+          ),
+        ]),
+      ),
     };
 
     // Suppress critical dependency warnings from Jackson's dynamic requires

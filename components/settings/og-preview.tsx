@@ -1,5 +1,6 @@
 import { Dispatch, SetStateAction, useMemo } from "react";
 
+import { PUBLIC_LINK_HOST } from "@/ee/_shared/public-host";
 import { ImageIcon } from "lucide-react";
 import ReactTextareaAutosize from "react-textarea-autosize";
 
@@ -23,7 +24,7 @@ export default function Preview({
     metaFavicon: favicon,
   } = data;
 
-  const hostname = "papermark.com";
+  const hostname = PUBLIC_LINK_HOST;
 
   return (
     <div>

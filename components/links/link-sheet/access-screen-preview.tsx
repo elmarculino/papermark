@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { PUBLIC_LINK_HOST } from "@/ee/_shared/public-host";
+
 import {
   ACCESS_PREVIEW_MESSAGE,
   ACCESS_PREVIEW_READY,
@@ -133,7 +135,7 @@ export default function AccessScreenPreview({
                   </svg>
                 </div>
                 <span className="whitespace-normal text-xs text-muted-foreground">
-                  papermark.com/view/...
+                  {PUBLIC_LINK_HOST}/view/...
                 </span>
               </div>
             </div>

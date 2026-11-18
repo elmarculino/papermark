@@ -20,6 +20,10 @@ function isAnalyticsPath(path: string) {
 }
 
 function isCustomDomain(host: string) {
+  // [fork] A self-hosted install serves the app on NEXT_PUBLIC_APP_BASE_HOST
+  // (e.g. papermark.apto); upstream only knows its own hosts.
+  const appHost = process.env.NEXT_PUBLIC_APP_BASE_HOST?.toLowerCase().trim();
+  if (appHost && host?.split(":")[0]?.toLowerCase() === appHost) return false;
   return (
     (process.env.NODE_ENV === "development" &&
       (host?.includes(".local") || host?.includes("papermark.dev"))) ||
