@@ -52,3 +52,68 @@ export async function useIsolatedSchemas(tag: string): Promise<void> {
     await client.end();
   }
 }
+
+/**
+ * Polls a run's status (DBOS status plus the layer row's `startedAt`, as
+ * `runs.retrieve` reads it) until it is one of `statuses`.
+ */
+export async function waitForStatus(
+  runId: string,
+  statuses: import("./status").RunStatus[],
+  timeoutMs = 20000,
+): Promise<import("./status").RunStatus> {
+  const { getClient } = await import("./client");
+  const { getRunRow } = await import("./store");
+  const { toRunStatus } = await import("./status");
+  const client = await getClient();
+  const deadline = Date.now() + timeoutMs;
+  let last = "(no workflow)";
+  for (;;) {
+    const workflow = await client.getWorkflow(runId);
+    if (workflow) {
+      const row = await getRunRow(runId);
+      const status = toRunStatus(workflow.status, row?.startedAt ?? null);
+      if (statuses.includes(status)) return status;
+      last = status;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `assertion failed: run ${runId} not ${statuses.join("/")} after ${timeoutMs} ms (last: ${last})`,
+      );
+    }
+    await sleep(100);
+  }
+}
+
+/**
+ * Launches an in-process DBOS worker for the tasks defined so far, the way
+ * the jobs worker does. `stop()` shuts DBOS down.
+ */
+export async function startTestWorker(
+  opts: { concurrency?: number } = {},
+): Promise<{ stop(): Promise<void> }> {
+  const { DBOS } = await import("@dbos-inc/dbos-sdk");
+  const config = await import("./config");
+  const { ensureJobsSchema } = await import("./db");
+  const { registerJobWorkflows } = await import("./executor");
+  const { publishRegistry, setStrictRegistry } = await import("./registry");
+  const { Semaphore } = await import("./semaphore");
+
+  setStrictRegistry(true);
+  await ensureJobsSchema();
+  registerJobWorkflows(
+    new Semaphore(opts.concurrency ?? config.workerConcurrency()),
+  );
+  DBOS.setConfig({
+    name: config.JOBS_APP_NAME,
+    systemDatabaseUrl: config.jobsDatabaseUrl(),
+    systemDatabaseSchemaName: config.dbosSchema(),
+    applicationVersion: config.JOBS_APP_VERSION,
+    runAdminServer: false,
+  });
+  await DBOS.launch();
+  // Queues registered after launch are picked up by DBOS's dispatcher, which
+  // re-reads the queues table every second.
+  await publishRegistry();
+  return { stop: () => DBOS.shutdown() };
+}

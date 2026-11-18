@@ -4,7 +4,13 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { type TriggerOptions, enqueueRun } from "../client";
+import { type TriggerOptions, enqueueRun, getClient } from "../client";
+import {
+  RunCanceledError,
+  type RunContext,
+  checkpoint,
+  currentRun,
+} from "../context";
 import {
   type TaskRunContext,
   allQueues,
@@ -12,6 +18,7 @@ import {
   registerTask,
 } from "../registry";
 import type { RetryOptions } from "../retry";
+import { mergeRunMetadata } from "../store";
 
 export class AbortTaskRunError extends Error {
   constructor(message: string) {
@@ -50,8 +57,12 @@ export type TaskHandle<P> = {
   batchTrigger(
     items: { payload: P; options?: TriggerOptions }[],
   ): Promise<{ batchId: string; runs: { id: string }[] }>;
-  triggerAndWait(payload: P, options?: TriggerOptions): Promise<never>;
+  triggerAndWait(payload: P, options?: TriggerOptions): Promise<TaskRunResult>;
 };
+
+export type TaskRunResult<O = any> =
+  | { ok: true; id: string; output: O; unwrap(): O }
+  | { ok: false; id: string; error: unknown; unwrap(): never };
 
 function resolveQueueName(id: string, queue?: QueueInput): string | undefined {
   if (!queue) return undefined;
@@ -83,8 +94,29 @@ function makeHandle<P>(id: string): TaskHandle<P> {
       }
       return { batchId: "batch_" + randomUUID().replaceAll("-", ""), runs };
     },
-    async triggerAndWait() {
-      throw new Error("triggerAndWait is not implemented yet");
+    async triggerAndWait(payload, options) {
+      const ctx = currentRun();
+      if (!ctx) {
+        throw new Error("triggerAndWait can only be called inside a task run");
+      }
+      const { id: runId } = await enqueueRun(id, payload, options);
+      try {
+        // The parent gives back its worker slot while the child runs.
+        const output = await ctx.yieldSlot(async () =>
+          (await getClient()).retrieveWorkflow(runId).getResult(),
+        );
+        return { ok: true, id: runId, output, unwrap: () => output };
+      } catch (error) {
+        if (error instanceof RunCanceledError) throw error;
+        return {
+          ok: false,
+          id: runId,
+          error,
+          unwrap: () => {
+            throw error;
+          },
+        };
+      }
     },
   };
 }
@@ -168,4 +200,100 @@ export const tasks = {
     const { id } = await enqueueRun(taskId, payload, options);
     return { id, taskIdentifier: taskId };
   },
+};
+
+/** Chains a metadata write onto the run's writes; failures are logged, never thrown. */
+function queueMetadataWrite(
+  ctx: RunContext,
+  targetRunId: string,
+  key: string,
+  value: unknown,
+): void {
+  ctx.writes = ctx.writes
+    .then(() => mergeRunMetadata(targetRunId, { [key]: value }))
+    .catch((error: unknown) => {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          event: "job.metadata_write_failed",
+          runId: targetRunId,
+          key,
+          error: String((error as Error)?.message ?? error),
+        }),
+      );
+    });
+}
+
+/** `metadata.set` / `metadata.parent.set`; no-ops outside a task run. */
+export const metadata = {
+  set(key: string, value: unknown): void {
+    const ctx = currentRun();
+    if (!ctx) return;
+    checkpoint();
+    ctx.metadata[key] = value;
+    queueMetadataWrite(ctx, ctx.runId, key, value);
+  },
+  parent: {
+    set(key: string, value: unknown): void {
+      const ctx = currentRun();
+      if (!ctx?.parentId) return;
+      checkpoint();
+      queueMetadataWrite(ctx, ctx.parentId, key, value);
+    },
+  },
+};
+
+/** Errors become `{ name, message, stack }` instead of `{}`. */
+function logReplacer(_key: string, value: unknown): unknown {
+  if (value instanceof Error) {
+    return { name: value.name, message: value.message, stack: value.stack };
+  }
+  return typeof value === "bigint" ? value.toString() : value;
+}
+
+type LogLevel = "debug" | "log" | "info" | "warn" | "error";
+
+function log(
+  level: LogLevel,
+  message: string,
+  fields?: Record<string, unknown>,
+) {
+  const ctx = currentRun();
+  if (ctx) checkpoint();
+  const entry = {
+    level,
+    runId: ctx?.runId,
+    taskId: ctx?.taskId,
+    message,
+    ...fields,
+  };
+  let line: string;
+  try {
+    line = JSON.stringify(entry, logReplacer);
+  } catch {
+    // e.g. circular fields: keep the message rather than throw from a logger.
+    line = JSON.stringify({
+      level,
+      runId: ctx?.runId,
+      taskId: ctx?.taskId,
+      message,
+    });
+  }
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else console.log(line);
+}
+
+/** One JSON line per call; inside a run it is also a cancellation checkpoint. */
+export const logger = {
+  debug: (message: string, fields?: Record<string, unknown>) =>
+    log("debug", message, fields),
+  log: (message: string, fields?: Record<string, unknown>) =>
+    log("log", message, fields),
+  info: (message: string, fields?: Record<string, unknown>) =>
+    log("info", message, fields),
+  warn: (message: string, fields?: Record<string, unknown>) =>
+    log("warn", message, fields),
+  error: (message: string, fields?: Record<string, unknown>) =>
+    log("error", message, fields),
 };
