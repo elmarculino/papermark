@@ -6,11 +6,10 @@ import {
 import { LambdaClient } from "@aws-sdk/client-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 
-// [fork] No default CRC32 checksums: S3-compatible stores (SeaweedFS, MinIO)
-// reject the checksum the SDK signs into presigned PUT URLs (BadDigest).
+// [fork] No default CRC32 request checksums: S3-compatible stores (SeaweedFS,
+// MinIO) reject the checksum the SDK signs into presigned PUT URLs (BadDigest).
 const S3_COMPAT_CHECKSUMS = {
   requestChecksumCalculation: "WHEN_REQUIRED",
-  responseChecksumValidation: "WHEN_REQUIRED",
 } as const;
 
 export const getS3Client = (storageRegion?: string) => {
