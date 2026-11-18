@@ -54,27 +54,21 @@ export async function useIsolatedSchemas(tag: string): Promise<void> {
 }
 
 /**
- * Polls a run's status (DBOS status plus the layer row's `startedAt`, as
- * `runs.retrieve` reads it) until it is one of `statuses`.
+ * Polls a run's status (via `runs.retrieve`) until it is one of `statuses`.
  */
 export async function waitForStatus(
   runId: string,
   statuses: import("./status").RunStatus[],
   timeoutMs = 20000,
 ): Promise<import("./status").RunStatus> {
-  const { getClient } = await import("./client");
-  const { getRunRow } = await import("./store");
-  const { toRunStatus } = await import("./status");
-  const client = await getClient();
+  const { retrieveRun } = await import("./runs");
   const deadline = Date.now() + timeoutMs;
   let last = "(no workflow)";
   for (;;) {
-    const workflow = await client.getWorkflow(runId);
-    if (workflow) {
-      const row = await getRunRow(runId);
-      const status = toRunStatus(workflow.status, row?.startedAt ?? null);
-      if (statuses.includes(status)) return status;
-      last = status;
+    const run = await retrieveRun(runId).catch(() => undefined);
+    if (run) {
+      if (statuses.includes(run.status)) return run.status;
+      last = run.status;
     }
     if (Date.now() > deadline) {
       throw new Error(

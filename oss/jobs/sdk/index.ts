@@ -18,7 +18,9 @@ import {
   registerTask,
 } from "../registry";
 import type { RetryOptions } from "../retry";
+import { cancelRun, listRuns, retrieveRun } from "../runs";
 import { mergeRunMetadata } from "../store";
+import { createPublicToken } from "../token";
 
 export class AbortTaskRunError extends Error {
   constructor(message: string) {
@@ -48,15 +50,32 @@ type TaskInput<P> = {
   [other: string]: unknown;
 };
 
+export type RunHandle = {
+  id: string;
+  taskIdentifier: string;
+  publicAccessToken: string;
+};
+
+const toHandle = async (
+  id: string,
+  taskIdentifier: string,
+): Promise<RunHandle> => ({
+  id,
+  taskIdentifier,
+  publicAccessToken: await createPublicToken({
+    scopes: { read: { runs: [id] } },
+  }),
+});
+
 export type TaskHandle<P> = {
   id: string;
   trigger(
     payload: P,
     options?: TriggerOptions,
-  ): Promise<{ id: string; taskIdentifier: string }>;
+  ): Promise<RunHandle>;
   batchTrigger(
     items: { payload: P; options?: TriggerOptions }[],
-  ): Promise<{ batchId: string; runs: { id: string }[] }>;
+  ): Promise<{ batchId: string; runs: RunHandle[] }>;
   triggerAndWait(payload: P, options?: TriggerOptions): Promise<TaskRunResult>;
 };
 
@@ -81,16 +100,16 @@ function resolveQueueName(id: string, queue?: QueueInput): string | undefined {
 function makeHandle<P>(id: string): TaskHandle<P> {
   const trigger = async (payload: P, options?: TriggerOptions) => {
     const { id: runId } = await enqueueRun(id, payload, options);
-    return { id: runId, taskIdentifier: id };
+    return toHandle(runId, id);
   };
   return {
     id,
     trigger,
     async batchTrigger(items) {
-      const runs: { id: string }[] = [];
+      const runs: RunHandle[] = [];
       for (const item of items) {
         const { id: runId } = await enqueueRun(id, item.payload, item.options);
-        runs.push({ id: runId });
+        runs.push(await toHandle(runId, id));
       }
       return { batchId: "batch_" + randomUUID().replaceAll("-", ""), runs };
     },
@@ -198,9 +217,17 @@ export function queue(q: { name: string; concurrencyLimit?: number }) {
 export const tasks = {
   async trigger(taskId: string, payload: unknown, options?: TriggerOptions) {
     const { id } = await enqueueRun(taskId, payload, options);
-    return { id, taskIdentifier: taskId };
+    return toHandle(id, taskId);
   },
 };
+
+export const runs = {
+  retrieve: retrieveRun,
+  list: listRuns,
+  cancel: cancelRun,
+};
+
+export const auth = { createPublicToken };
 
 /** Chains a metadata write onto the run's writes; failures are logged, never thrown. */
 function queueMetadataWrite(
