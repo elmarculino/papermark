@@ -122,6 +122,25 @@ async function main() {
     assert(verifyPublicToken(token + "x") === null, "extended");
   });
 
+  await check("trigger survives a token signing failure", async () => {
+    const saved = process.env.NEXTAUTH_SECRET;
+    const warn = console.warn;
+    const lines: string[] = [];
+    console.warn = (...a: unknown[]) => void lines.push(a.map(String).join(" "));
+    delete process.env.NEXTAUTH_SECRET;
+    try {
+      const handle = await tOk.trigger({});
+      assert(handle.publicAccessToken === undefined, "no token");
+      assert(lines.some((l) => l.includes("job.public_token_failed")), "warned");
+      assert(!lines.join("").includes(saved ?? "\u0000"), "no secret logged");
+      process.env.NEXTAUTH_SECRET = saved;
+      assert((await runs.retrieve(handle.id)).id === handle.id, "run exists");
+    } finally {
+      console.warn = warn;
+      if (saved !== undefined) process.env.NEXTAUTH_SECRET = saved;
+    }
+  });
+
   await check("token: expires", async () => {
     const token = await auth.createPublicToken({
       scopes: { read: { runs: ["run_x"] } },

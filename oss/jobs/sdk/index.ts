@@ -53,19 +53,37 @@ type TaskInput<P> = {
 export type RunHandle = {
   id: string;
   taskIdentifier: string;
-  publicAccessToken: string;
+  publicAccessToken: string | undefined;
 };
 
+/**
+ * The run is already committed when this runs, so a token failure (e.g. no
+ * NEXTAUTH_SECRET) must not fail the trigger: the handle just has no token.
+ */
 const toHandle = async (
   id: string,
   taskIdentifier: string,
-): Promise<RunHandle> => ({
-  id,
-  taskIdentifier,
-  publicAccessToken: await createPublicToken({
-    scopes: { read: { runs: [id] } },
-  }),
-});
+): Promise<RunHandle> => {
+  try {
+    return {
+      id,
+      taskIdentifier,
+      publicAccessToken: await createPublicToken({
+        scopes: { read: { runs: [id] } },
+      }),
+    };
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        event: "job.public_token_failed",
+        runId: id,
+        error: String((error as Error)?.message ?? error),
+      }),
+    );
+    return { id, taskIdentifier, publicAccessToken: undefined };
+  }
+};
 
 export type TaskHandle<P> = {
   id: string;
