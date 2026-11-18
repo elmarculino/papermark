@@ -71,6 +71,9 @@ async function readBetaFeatures(): Promise<BetaFeaturesRecord | undefined> {
   return inFlightBetaFeatures;
 }
 
+// [fork] Unknown FEATURE_FLAGS names are reported once per process.
+let warnedUnknownFlags = false;
+
 export const getFeatureFlags = async ({ teamId }: { teamId?: string }) => {
   const teamFeatures: Record<BetaFeatures, boolean> = {
     tokens: false,
@@ -98,11 +101,20 @@ export const getFeatureFlags = async ({ teamId }: { teamId?: string }) => {
     customPrivacyUrl: false,
   };
 
-  // Return all features as false if edge config is not available
+  // [fork] Without Edge Config, FEATURE_FLAGS (comma-separated names) enables
+  // flags for every team; everything else stays off.
   if (!process.env.EDGE_CONFIG) {
-    return Object.fromEntries(
-      Object.entries(teamFeatures).map(([key, _v]) => [key, false]),
-    );
+    for (const name of (process.env.FEATURE_FLAGS ?? "").split(",")) {
+      const flag = name.trim();
+      if (!flag) continue;
+      if (Object.hasOwn(teamFeatures, flag)) {
+        teamFeatures[flag as BetaFeatures] = true;
+      } else if (!warnedUnknownFlags) {
+        warnedUnknownFlags = true;
+        console.warn(`[featureFlags] Unknown flag in FEATURE_FLAGS: ${flag}`);
+      }
+    }
+    return teamFeatures;
   } else if (!teamId) {
     return teamFeatures;
   }
