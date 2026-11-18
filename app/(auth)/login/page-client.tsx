@@ -218,7 +218,8 @@ export default function Login({ methods }: { methods: LoginMethods }) {
                   setLastUsed("passkey");
                   setClickedMethod("passkey");
                   signInWithPasskey({
-                    tenantId: process.env.NEXT_PUBLIC_HANKO_TENANT_ID as string,
+                    // [fork] the tenant the server checked (oss/_shared/login-methods)
+                    tenantId: methods.hankoTenantId as string,
                   }).then(() => {
                     setClickedMethod(undefined);
                   });
