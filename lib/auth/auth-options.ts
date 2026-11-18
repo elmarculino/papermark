@@ -1,16 +1,16 @@
 import { isSamlEnforcedForEmailDomain } from "@/lib/api/teams/is-saml-enforced-for-email-domain";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
-import PasskeyProvider from "@teamhanko/passkeys-next-auth-provider";
 import { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import EmailProvider from "next-auth/providers/email";
 import GoogleProvider from "next-auth/providers/google";
 import LinkedInProvider from "next-auth/providers/linkedin";
 
+import { verifyPasskeyLogin } from "@/ee/passkeys/server";
+
 import { identifyUser, trackAnalytics } from "@/lib/analytics";
 import { qstash } from "@/lib/cron";
 import { sendVerificationRequestEmail } from "@/lib/emails/send-verification-request";
-import hanko from "@/lib/hanko";
 import { jackson } from "@/lib/jackson";
 import prisma from "@/lib/prisma";
 import { CustomUser } from "@/lib/types";
@@ -88,12 +88,28 @@ export const authOptions: NextAuthOptions = {
         }
       },
     }),
-    PasskeyProvider({
-      tenant: hanko,
-      async authorize({ userId }) {
-        const user = await prisma.user.findUnique({ where: { id: userId } });
-        if (!user) return null;
-        return user;
+    // [fork] Passkeys without Hanko (oss/passkeys).
+    CredentialsProvider({
+      id: "passkey",
+      name: "Passkey",
+      credentials: {
+        challengeId: { type: "text" },
+        response: { type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.challengeId || !credentials.response) return null;
+        let response;
+        try {
+          response = JSON.parse(credentials.response);
+        } catch {
+          return null;
+        }
+        const userId = await verifyPasskeyLogin({
+          challengeId: credentials.challengeId,
+          response,
+        }).catch(() => null);
+        if (!userId) return null;
+        return prisma.user.findUnique({ where: { id: userId } });
       },
     }),
     {

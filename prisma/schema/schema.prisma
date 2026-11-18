@@ -46,6 +46,7 @@ model User {
   createdAt      DateTime   @default(now())
   accounts       Account[]
   sessions       Session[]
+  passkeys       PasskeyCredential[] // [fork] oss/passkeys
   documents      Document[]
   teams          UserTeam[]
   userDatarooms  UserDataroom[]
