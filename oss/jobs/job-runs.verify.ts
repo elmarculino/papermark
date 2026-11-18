@@ -8,6 +8,7 @@ import {
   startTestWorker,
   useIsolatedSchemas,
   waitForStatus,
+  withClockAhead,
 } from "./testing";
 
 loadEnvConfig(process.cwd());
@@ -78,9 +79,11 @@ async function main() {
   });
 
   await check("expired token is 401", async () => {
-    const token = await tagToken(["version:v1"], "1s");
-    await sleep(1500);
-    assert((await get({ tag: "version:v1" }, token)).status === 401, "expired");
+    const token = await tagToken(["version:v1"], "15m");
+    const res = await withClockAhead(24 * 3600_000 + 1000, () =>
+      get({ tag: "version:v1" }, token),
+    );
+    assert(res.status === 401, `status ${res.status}`);
   });
 
   await check("run token: own run 200, another run 403", async () => {

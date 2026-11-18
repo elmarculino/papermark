@@ -55,7 +55,21 @@ task({
   queue: poisonQueue,
   run: async () => {
     bump("poison");
+    // Holds the worker's only slot long enough for fx-other's queue to claim
+    // its run, which then waits for the slot.
+    await new Promise((resolve) => setTimeout(resolve, 2500));
     process.exit(1);
+  },
+});
+
+// A run on another queue: claimed while the poison run holds the slot.
+task({
+  id: "fx-other",
+  queue: queue({ name: "fx-other-q" }),
+  retry: { maxAttempts: 1 },
+  run: async () => {
+    bump("other");
+    return "other done";
   },
 });
 

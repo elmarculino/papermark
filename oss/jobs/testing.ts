@@ -32,6 +32,21 @@ export async function throwsWith(
 export const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** Runs `fn` with `Date.now()` moved `offsetMs` into the future. */
+export async function withClockAhead<T>(
+  offsetMs: number,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  const realNow = Date.now;
+  const fixed = realNow() + offsetMs;
+  Date.now = () => fixed;
+  try {
+    return await fn();
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 /**
  * Points the layer at throwaway schemas (`papermark_jobs_<tag>`, `dbos_<tag>`)
  * and drops them so a verify script starts from nothing. Call before anything

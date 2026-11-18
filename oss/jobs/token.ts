@@ -4,7 +4,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { parseDelay } from "./duration";
 
 const PREFIX = "pmjob_";
-const DEFAULT_EXPIRY_SECONDS = 15 * 60;
+/**
+ * Every token lives at least this long, whatever the caller asks for: the
+ * hooks stop polling on a 401 and the progress bar caches its token for the
+ * tab's life, so a short expiry would hide the completion of a long run.
+ * Tokens are read-only and scoped to tags or runs.
+ */
+const MIN_EXPIRY_SECONDS = 24 * 60 * 60;
 
 type TokenPayload = { tags: string[]; runs: string[]; exp: number };
 
@@ -23,9 +29,8 @@ export async function createPublicToken(opts: {
   scopes: { read: { tags?: string[]; runs?: string[] } };
   expirationTime?: string;
 }): Promise<string> {
-  const seconds = opts.expirationTime
-    ? parseDelay(opts.expirationTime)
-    : DEFAULT_EXPIRY_SECONDS;
+  const requested = opts.expirationTime ? parseDelay(opts.expirationTime) : 0;
+  const seconds = Math.max(requested, MIN_EXPIRY_SECONDS);
   const payload: TokenPayload = {
     tags: opts.scopes.read.tags ?? [],
     runs: opts.scopes.read.runs ?? [],

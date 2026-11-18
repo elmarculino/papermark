@@ -1,8 +1,9 @@
 /** Run, idempotency and task-registry tables of the jobs layer. */
 import type { PoolClient } from "pg";
 
-import { jobsSchema } from "./config";
+import { dbosSchema, jobsSchema } from "./config";
 import { ensureJobsSchema, getPool } from "./db";
+import type { RunStatus } from "./status";
 
 export type RunRow = {
   id: string;
@@ -76,10 +77,23 @@ export async function getRunRow(id: string): Promise<RunRow | null> {
   return rows[0] ? toRunRow(rows[0]) : null;
 }
 
+/** SQL conditions (DBOS row `w`, layer row `r`) matching each status, as `toRunStatus` maps them. */
+const STATUS_SQL: Record<RunStatus, string> = {
+  QUEUED: `(w.status = 'ENQUEUED' OR (w.status = 'PENDING' AND r.started_at IS NULL))`,
+  EXECUTING: `(w.status = 'PENDING' AND r.started_at IS NOT NULL)`,
+  DELAYED: `w.status = 'DELAYED'`,
+  COMPLETED: `w.status = 'SUCCESS'`,
+  FAILED: `w.status = 'ERROR'`,
+  CANCELED: `w.status = 'CANCELLED'`,
+  CRASHED: `w.status = 'MAX_RECOVERY_ATTEMPTS_EXCEEDED'`,
+};
+
 export async function findRunRows(f: {
   taskIds?: string[];
   anyTags?: string[];
   since?: Date;
+  /** Filtered before the limit, so newer runs in other states don't hide a match. */
+  statuses?: RunStatus[];
   limit?: number;
 }): Promise<RunRow[]> {
   await ensureJobsSchema();
@@ -87,21 +101,26 @@ export async function findRunRows(f: {
   const params: unknown[] = [];
   if (f.taskIds) {
     params.push(f.taskIds);
-    where.push(`task_id = ANY($${params.length})`);
+    where.push(`r.task_id = ANY($${params.length})`);
   }
   if (f.anyTags) {
     params.push(f.anyTags);
-    where.push(`tags && $${params.length}::text[]`);
+    where.push(`r.tags && $${params.length}::text[]`);
   }
   if (f.since) {
     params.push(f.since);
-    where.push(`created_at >= $${params.length}`);
+    where.push(`r.created_at >= $${params.length}`);
+  }
+  if (f.statuses) {
+    const matches = f.statuses.map((s) => STATUS_SQL[s] ?? "false");
+    where.push(`(${matches.join(" OR ") || "false"})`);
   }
   params.push(f.limit ?? 100);
   const { rows } = await getPool().query<DbRun>(
-    `SELECT * FROM ${jobsSchema()}.runs
+    `SELECT r.* FROM ${jobsSchema()}.runs r
+     ${f.statuses ? `JOIN ${dbosSchema()}.workflow_status w ON w.workflow_uuid = r.id` : ""}
      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-     ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
+     ORDER BY r.created_at DESC, r.id DESC LIMIT $${params.length}`,
     params,
   );
   return rows.map(toRunRow);
@@ -123,6 +142,23 @@ export async function markStarted(id: string): Promise<void> {
   await getPool().query(
     `UPDATE ${jobsSchema()}.runs SET started_at = now() WHERE id = $1 AND started_at IS NULL`,
     [id],
+  );
+}
+
+/**
+ * Zeroes DBOS's recovery attempts of claimed runs whose body never started.
+ * DBOS counts every claim, and a run claimed on one queue can wait for the
+ * worker-wide slot through several worker crashes; without this it would be
+ * dead-lettered (CRASHED) without having run. Runs that started keep their
+ * count, so a run that kills the worker still ends CRASHED.
+ */
+export async function resetUnstartedRecoveryAttempts(): Promise<void> {
+  await ensureJobsSchema();
+  await getPool().query(
+    `UPDATE ${dbosSchema()}.workflow_status w SET recovery_attempts = 0
+     FROM ${jobsSchema()}.runs r
+     WHERE r.id = w.workflow_uuid AND w.status = 'PENDING'
+       AND r.started_at IS NULL AND w.recovery_attempts > 0`,
   );
 }
 

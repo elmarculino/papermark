@@ -154,7 +154,8 @@ function counter(dir: string, name: string): number {
 
 async function main() {
   const { discoverTaskFiles, startWorker } = await import("./worker");
-  const { MAX_RECOVERY_ATTEMPTS, workerConcurrency } = await import("./config");
+  const { MAX_RECOVERY_ATTEMPTS, dbosSchema, workerConcurrency } =
+    await import("./config");
 
   let files: string[] = [];
   await check("discover: real task files, no verify scripts", async () => {
@@ -342,19 +343,53 @@ async function main() {
     });
 
     await check(
-      "bounded claims: a poison run can't dead-letter the runs queued behind it",
+      "bounded claims: a poison run can't dead-letter runs waiting behind it, on its queue or another",
       async () => {
         // Enqueued while no worker runs, so the first poll sees the whole backlog.
         const poison = await tasks.trigger("fx-poison", {});
         await sleep(50);
         const normal = [];
         for (let i = 0; i < 3; i++) normal.push(await tasks.trigger("fx-normal", {}));
+        // A run on another queue, claimed on every start while it waits for the slot.
+        const other = await tasks.trigger("fx-other", {});
+        const dbosStatus = async (id: string) =>
+          (
+            await getPool().query<{ status: string }>(
+              `SELECT status FROM ${dbosSchema()}.workflow_status WHERE workflow_uuid = $1`,
+              [id],
+            )
+          ).rows[0]?.status;
         const oneSlot = { JOBS_WORKER_CONCURRENCY: "1" };
         for (let start = 1; start <= MAX_RECOVERY_ATTEMPTS + 1; start++) {
           const child = spawnWorker(dir, oneSlot);
+          // Holds `other` back (a claim skips locked rows) until the poison run
+          // has the slot, so it is claimed and waits instead of racing for it.
+          // Taken once recovery has re-enqueued it, before the first queue poll.
+          const deadline = Date.now() + 60_000;
+          while ((await dbosStatus(other.id)) !== "ENQUEUED") {
+            assert(Date.now() < deadline, `start ${start}: other run re-enqueued`);
+            await sleep(10);
+          }
+          const lock = await getPool().connect();
+          try {
+            await lock.query("BEGIN");
+            const { rows } = await lock.query<{ status: string }>(
+              `SELECT status FROM ${dbosSchema()}.workflow_status WHERE workflow_uuid = $1 FOR UPDATE`,
+              [other.id],
+            );
+            assert(rows[0]?.status === "ENQUEUED", `start ${start}: other run locked before its claim`);
+            await waitFor("poison run started", () => counter(dir, "poison") === start, 60_000, child);
+          } finally {
+            await lock.query("COMMIT");
+            lock.release();
+          }
           const code = await waitExit(child, 60_000);
           assert(code !== 0, `start ${start}: worker crashed (code ${code})`);
           assert(counter(dir, "poison") === start, `start ${start}: poison ran ${counter(dir, "poison")} times`);
+          assert(
+            (await dbosStatus(other.id)) === "PENDING" && counter(dir, "other") === 0,
+            `start ${start}: other run claimed but not started`,
+          );
         }
         const child = spawnWorker(dir, oneSlot);
         await waitReady(child);
@@ -368,6 +403,9 @@ async function main() {
           `runs behind the poison run: ${statuses.join(", ")}`,
         );
         assert(counter(dir, "normal") === 3, `normal bodies ran ${counter(dir, "normal")} times`);
+        const otherStatus = await waitForStatus(other.id, ["COMPLETED", "FAILED", "CRASHED", "CANCELED"], 30_000);
+        assert(otherStatus === "COMPLETED", `run claimed on another queue: ${otherStatus}`);
+        assert(counter(dir, "other") === 1, `other body ran ${counter(dir, "other")} times`);
         await stopWorker(child);
       },
     );

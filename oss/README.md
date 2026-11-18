@@ -36,7 +36,7 @@ Upstream runs its background tasks (`lib/trigger/*`, conversions, notifications,
   - `ffmpeg` on `PATH` (video tasks).
 - **App env the tasks rely on:** `NEXT_PRIVATE_UNSUBSCRIBE_JWT_SECRET` (any long random string) signs the unsubscribe links in data-room notification emails and the team invitation links; without it `/api/jobs/send-dataroom-new-document-notification` returns 500 and the notification task fails.
 - **The app must be reachable from the worker.** Several tasks call back into the app over HTTP (`NEXT_PUBLIC_BASE_URL`/`NEXTAUTH_URL` + `INTERNAL_API_KEY`), e.g. PDF page rendering (`/api/mupdf/*`) and notification emails. In containers, point those URLs at an address the worker can resolve.
-- **Progress in the UI:** the hooks poll `GET /api/job-runs` every 1.5 s with an HMAC token (signed with `NEXTAUTH_SECRET`, 15-minute expiry), so the app needs no extra service.
+- **Progress in the UI:** the hooks poll `GET /api/job-runs` every 1.5 s with an HMAC token (signed with `NEXTAUTH_SECRET`, read-only and scoped; it lives at least 24 hours even when the caller asks for 15 minutes, so a long conversion still reports completion), so the app needs no extra service.
 - **Failures** show up as one JSON line per failed run (after its last attempt) on the worker's stderr, `{"level":"error","event":"job.failed","taskId":…,"runId":…,"attempt":…,"error":…}` (the payload keeps only id fields such as `teamId`; other values are reduced to their type), and the run ends `FAILED` (or `CRASHED` after 3 recovery attempts). Run state lives in `dbos.workflow_status` and `papermark_jobs.runs`.
 
 ```sh

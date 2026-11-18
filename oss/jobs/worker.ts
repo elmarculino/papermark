@@ -31,6 +31,7 @@ import {
 } from "./registry";
 import { type RetryOptions, setRetryDefaults } from "./retry";
 import { Semaphore } from "./semaphore";
+import { resetUnstartedRecoveryAttempts } from "./store";
 
 const TASK_FILE_PATTERNS = [
   "lib/trigger/**/*.ts",
@@ -89,6 +90,8 @@ export async function startWorker(
   // Before launch, so the dispatcher's first poll already sees this worker's
   // claim cap (a row left by an older worker could lack it).
   await publishRegistry({ workerConcurrency: concurrency });
+  // Before launch, which re-enqueues this worker's PENDING runs for recovery.
+  await resetUnstartedRecoveryAttempts();
   await DBOS.launch();
 
   const scheduled = allTasks().filter((t) => t.kind === "scheduled");

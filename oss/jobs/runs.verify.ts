@@ -4,11 +4,11 @@ import { loadEnvConfig } from "@next/env";
 import {
   assert,
   check,
-  sleep,
   startTestWorker,
   throwsWith,
   useIsolatedSchemas,
   waitForStatus,
+  withClockAhead,
 } from "./testing";
 
 loadEnvConfig(process.cwd());
@@ -98,6 +98,32 @@ async function main() {
     assert(after.isCompleted === false, "canceled is not completed");
   });
 
+  await check("list: status filter sees past 100 newer non-matching runs", async () => {
+    const tags = ["dataroom_flood"];
+    const live = await tDebounce.trigger(
+      { dataroomDocumentIds: ["live"] },
+      { delay: "10m", tags },
+    );
+    for (let i = 0; i < 101; i++) {
+      const handle = await tDebounce.trigger(
+        { dataroomDocumentIds: [`c${i}`] },
+        { delay: "10m", tags },
+      );
+      await runs.cancel(handle.id);
+    }
+    const listed = await runs.list({
+      taskIdentifier: [DEBOUNCE],
+      tag: tags,
+      status: ["DELAYED", "QUEUED"],
+      period: "15m",
+    });
+    assert(
+      listed.data.length === 1 && listed.data[0].id === live.id,
+      `listed ${listed.data.map((r) => r.id).join(",") || "nothing"}`,
+    );
+    await runs.cancel(live.id);
+  });
+
   await check("unknown run ids reject with Run not found", async () => {
     const id = "run_ffffffffffffffffffffffffffffffff";
     await throwsWith(() => runs.retrieve(id), `Run "${id}" not found`);
@@ -141,14 +167,23 @@ async function main() {
     }
   });
 
-  await check("token: expires", async () => {
-    const token = await auth.createPublicToken({
+  await check("token: lives at least 24 hours, then expires", async () => {
+    const HOUR = 3600_000;
+    const short = await auth.createPublicToken({
       scopes: { read: { runs: ["run_x"] } },
-      expirationTime: "1s",
+      expirationTime: "15m",
     });
-    assert(verifyPublicToken(token) !== null, "valid before expiry");
-    await sleep(1500);
-    assert(verifyPublicToken(token) === null, "expired");
+    const at = (ms: number, token = short) =>
+      withClockAhead(ms, () => verifyPublicToken(token));
+    assert((await at(16 * 60_000)) !== null, "15m token valid after 16 minutes");
+    assert((await at(24 * HOUR - 60_000)) !== null, "valid just under 24 hours");
+    assert((await at(24 * HOUR + 1000)) === null, "expired after 24 hours");
+    const long = await auth.createPublicToken({
+      scopes: { read: { runs: ["run_x"] } },
+      expirationTime: "48h",
+    });
+    assert((await at(30 * HOUR, long)) !== null, "48h token valid after 30 hours");
+    assert((await at(48 * HOUR + 1000, long)) === null, "48h token expires");
   });
 
   await worker.stop();

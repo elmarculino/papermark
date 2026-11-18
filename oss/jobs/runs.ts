@@ -70,10 +70,12 @@ export async function listRuns(f: {
   period?: string;
   limit?: number;
 }): Promise<{ data: Omit<RetrievedRun, "payload" | "output">[] }> {
+  const wanted = asArray(f.status);
   const rows = await findRunRows({
     taskIds: asArray(f.taskIdentifier),
     anyTags: asArray(f.tag),
     since: f.period ? new Date(Date.now() - parsePeriodMs(f.period)) : undefined,
+    statuses: wanted,
     limit: f.limit,
   });
   if (rows.length === 0) return { data: [] };
@@ -85,7 +87,6 @@ export async function listRuns(f: {
     loadOutput: false,
   });
   const byId = new Map(workflows.map((w) => [w.workflowID, w]));
-  const wanted = asArray(f.status);
   const data = rows.flatMap((row) => {
     const workflow = byId.get(row.id);
     if (!workflow) return [];
