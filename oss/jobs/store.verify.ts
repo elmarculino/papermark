@@ -104,6 +104,20 @@ async function main() {
     });
   });
 
+  await check("concurrent first-time triggers of one key yield one winner", async () => {
+    const attempt = (runId: string) =>
+      withTransaction(async (c) => {
+        const hit = await store.lockIdempotencyKey(c, "t-a", "s", "race");
+        if (hit) return { sawNull: false, runId: hit.runId };
+        await sleep(200);
+        await store.upsertIdempotencyKey(c, "t-a", "s", "race", runId, 60);
+        return { sawNull: true, runId };
+      });
+    const [a, b] = await Promise.all([attempt("run_a"), attempt("run_b")]);
+    assert([a, b].filter((r) => r.sawNull).length === 1, "exactly one saw null");
+    assert(a.runId === b.runId, "both resolve to the same run id");
+  });
+
   await check("task registry reflects upserts", async () => {
     await store.upsertTaskRegistry([
       { taskId: "t-a", queueName: "q1", kind: "task" },

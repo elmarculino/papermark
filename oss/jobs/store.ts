@@ -132,6 +132,12 @@ export async function lockIdempotencyKey(
   scope: string,
   key: string,
 ): Promise<{ runId: string; expiresAt: Date } | null> {
+  // FOR UPDATE locks nothing when the row doesn't exist yet, so serialize
+  // first-time triggers of the same key with a transaction-scoped advisory lock.
+  await c.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1 || '|' || $2 || '|' || $3, 0))",
+    [taskId, scope, key],
+  );
   const { rows } = await c.query<{ run_id: string; expires_at: Date }>(
     `SELECT run_id, expires_at FROM ${jobsSchema()}.idempotency_keys
      WHERE task_id = $1 AND scope = $2 AND key = $3 FOR UPDATE`,

@@ -17,6 +17,11 @@ export function getPool(): Pool {
       connectionString: jobsDatabaseUrl(),
       max: Number(process.env.JOBS_DB_POOL_SIZE || 3),
     });
+    // An error on an idle client (e.g. a Postgres restart) would otherwise be
+    // an unhandled 'error' event and kill the process.
+    globalForPool.__papermarkJobsPool.on("error", (error) => {
+      console.error("[jobs] idle database client error:", error.message);
+    });
   }
   return globalForPool.__papermarkJobsPool;
 }
@@ -24,6 +29,7 @@ export function getPool(): Pool {
 export async function withTransaction<T>(
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
+  await ensureJobsSchema();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -66,12 +72,12 @@ export function ensureJobsSchema(): Promise<void> {
   let pending = ensured.get(key);
   if (!pending) {
     pending = (async () => {
-      await DBOS.migrate(jobsDatabaseUrl(), { schemaName: dbosSchema() });
       const client = await getPool().connect();
       try {
-        // Serialize concurrent first-run DDL across processes.
+        // Serialize concurrent first-run migrations across processes (app + worker).
         await client.query("SELECT pg_advisory_lock(hashtext($1))", [key]);
         try {
+          await DBOS.migrate(jobsDatabaseUrl(), { schemaName: dbosSchema() });
           for (const statement of layerDdl(jobsSchema())) {
             await client.query(statement);
           }
