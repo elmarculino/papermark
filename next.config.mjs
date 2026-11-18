@@ -1,3 +1,13 @@
+import { fileURLToPath } from "node:url";
+
+// Build-time jobs backend: "dbos" aliases @trigger.dev/* to oss/jobs.
+const jobsBackend = process.env.JOBS_BACKEND || "dbos";
+if (jobsBackend !== "dbos" && jobsBackend !== "trigger") {
+  throw new Error(
+    `JOBS_BACKEND must be "dbos" or "trigger", got "${jobsBackend}"`,
+  );
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -346,7 +356,13 @@ const nextConfig = {
     // runtime from node_modules.
     // jsonpath (a dub dependency) reads its grammar file from disk at module
     // load, which breaks when webpack bundles it into app-router routes.
-    serverComponentsExternalPackages: ["oidc-provider", "koa", "jsonpath"],
+    serverComponentsExternalPackages: [
+      "oidc-provider",
+      "koa",
+      "jsonpath",
+      "@dbos-inc/dbos-sdk",
+      "pg",
+    ],
   },
   webpack: (config, { isServer }) => {
     // oidc-provider depends on Koa which uses dynamic requires webpack can't
@@ -356,8 +372,23 @@ const nextConfig = {
       const externals = Array.isArray(config.externals)
         ? config.externals
         : [config.externals].filter(Boolean);
-      externals.push("oidc-provider", "koa");
-      config.externals = externals;
+      externals.push("oidc-provider", "koa", "@dbos-inc/dbos-sdk", "pg");
+      // Next externalizes node_modules packages before resolve.alias applies,
+      // which would leave the real SDK required at runtime. In dbos mode the
+      // two aliased entry points must be bundled (resolved to the layer).
+      config.externals =
+        jobsBackend === "dbos"
+          ? externals.map((external) =>
+              typeof external === "function"
+                ? (data, callback) =>
+                    data &&
+                    (data.request === "@trigger.dev/sdk" ||
+                      data.request === "@trigger.dev/react-hooks")
+                      ? callback()
+                      : external(data, callback)
+                : external,
+            )
+          : externals;
     }
 
     // Stub out @google-cloud/kms - it's an optional dependency of @libpdf/core
@@ -375,6 +406,19 @@ const nextConfig = {
       "@sap/hana-client": false,
       "@sap/hana-client/extension/Stream": false,
       "hdb-pool": false,
+      // Server-only jobs dependencies must never reach the client bundle.
+      ...(isServer ? {} : { "@dbos-inc/dbos-sdk": false, pg: false }),
+      // `$` = exact match, so `@trigger.dev/sdk/v3` stays the real SDK.
+      ...(jobsBackend === "dbos"
+        ? {
+            "@trigger.dev/sdk$": fileURLToPath(
+              new URL("./oss/jobs/sdk/index.ts", import.meta.url),
+            ),
+            "@trigger.dev/react-hooks$": fileURLToPath(
+              new URL("./oss/jobs/react-hooks/index.ts", import.meta.url),
+            ),
+          }
+        : {}),
     };
 
     // Suppress critical dependency warnings from Jackson's dynamic requires

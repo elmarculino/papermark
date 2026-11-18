@@ -232,8 +232,15 @@ export function queue(q: { name: string; concurrencyLimit?: number }) {
   return { name: q.name, concurrencyLimit: q.concurrencyLimit };
 }
 
+/** The payload type a task handle accepts (Trigger's `TaskPayload`). */
+type TaskPayload<T> = T extends TaskHandle<infer P> ? P : unknown;
+
 export const tasks = {
-  async trigger(taskId: string, payload: unknown, options?: TriggerOptions) {
+  async trigger<T = unknown>(
+    taskId: string,
+    payload: TaskPayload<T>,
+    options?: TriggerOptions,
+  ) {
     const { id } = await enqueueRun(taskId, payload, options);
     return toHandle(id, taskId);
   },
