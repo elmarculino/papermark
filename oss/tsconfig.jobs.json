@@ -8,6 +8,7 @@
       "@trigger.dev/react-hooks": ["../oss/jobs/react-hooks/index.ts"],
       "@vercel/blob": ["../oss/blob/server.ts"],
       "@vercel/blob/client": ["../oss/blob/client.ts"],
+      "@chronark/zod-bird": ["../oss/analytics/tinybird.ts"],
       "@/ee/*": ["../oss/*"],
       "@/*": ["../*"]
     }

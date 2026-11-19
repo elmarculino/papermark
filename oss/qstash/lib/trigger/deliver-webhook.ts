@@ -9,10 +9,12 @@
  * addresses are refused unless WEBHOOK_ALLOW_PRIVATE_URLS=true.
  */
 import { AbortTaskRunError, logger, task } from "@trigger.dev/sdk";
+import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 
 import prisma from "@/lib/prisma";
+import { recordWebhookEvent } from "@/lib/tinybird/publish";
 import { createWebhookSignature } from "@/lib/webhook/signature";
 import type { WebhookPayload } from "@/lib/webhook/types";
 
@@ -79,6 +81,30 @@ const redact = (rawUrl: string) => {
   }
 };
 
+/** The webhook's event log (Settings → Webhooks), as QStash's callback kept
+ * it; never fails a delivery. */
+async function logAttempt(
+  webhookId: string,
+  payload: WebhookPayload,
+  url: string,
+  status: number,
+  requestBody: string,
+  responseBody: string,
+) {
+  await recordWebhookEvent({
+    event_id: payload.id,
+    webhook_id: webhookId,
+    message_id: randomUUID(),
+    event: payload.event,
+    url,
+    http_status: status,
+    request_body: requestBody,
+    response_body: responseBody,
+  }).catch((error) =>
+    logger.warn("Webhook event log write failed", { error: String(error) }),
+  );
+}
+
 export const deliverWebhookTask = task({
   id: "deliver-webhook",
   retry: { maxAttempts: 3 },
@@ -102,18 +128,40 @@ export const deliverWebhookTask = task({
 
     await assertDeliverableUrl(webhook.url);
     const signature = await createWebhookSignature(webhook.secret, payload);
-    const response = await fetch(webhook.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Papermark-Signature": signature,
-      },
-      body: JSON.stringify(payload),
-      redirect: "manual",
-      signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
-    });
-    // Drain the body so the connection is released.
-    await response.text().catch(() => "");
+    const body = JSON.stringify(payload);
+    let response: Response;
+    try {
+      response = await fetch(webhook.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Papermark-Signature": signature,
+        },
+        body,
+        redirect: "manual",
+        signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
+      });
+    } catch (error) {
+      await logAttempt(
+        webhookId,
+        payload,
+        webhook.url,
+        503,
+        body,
+        String(error),
+      );
+      throw error;
+    }
+    // Read (and so release) the body; the event log keeps the first 10 KB.
+    const responseBody = await response.text().catch(() => "");
+    await logAttempt(
+      webhookId,
+      payload,
+      webhook.url,
+      response.status,
+      body,
+      responseBody.slice(0, 10_000),
+    );
 
     if (!response.ok) {
       throw new Error(

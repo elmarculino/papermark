@@ -146,6 +146,20 @@ async function main() {
       assert(hits.length === 2, `two attempts, got ${hits.length}`);
     });
 
+    await check("every attempt is in the webhook's event log", async () => {
+      const { getWebhookEvents } = await import("../../lib/tinybird/pipes");
+      const { data } = await getWebhookEvents({ webhookId: webhook.pId });
+      const statuses = data.map((e) => e.http_status).sort();
+      assert(
+        JSON.stringify(statuses) === JSON.stringify([200, 200, 500]),
+        `logged statuses: ${JSON.stringify(statuses)}`,
+      );
+      assert(
+        data.every((e) => e.event === "dataroom.created"),
+        "event",
+      );
+    });
+
     await check("a deleted webhook is not called", async () => {
       hits.length = 0;
       const run = await deliverWebhookTask.trigger({
