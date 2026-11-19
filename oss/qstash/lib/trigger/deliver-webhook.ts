@@ -23,7 +23,9 @@ import { recordWebhookEvent } from "@/lib/tinybird/publish";
 import { createWebhookSignature } from "@/lib/webhook/signature";
 import type { WebhookPayload } from "@/lib/webhook/types";
 
-const DELIVERY_TIMEOUT_MS = 15_000;
+// Whole-request deadline (WEBHOOK_DELIVERY_TIMEOUT_MS, default 15 s).
+const deliveryTimeoutMs = () =>
+  Number(process.env.WEBHOOK_DELIVERY_TIMEOUT_MS) || 15_000;
 
 const privateRanges = new BlockList();
 for (const [net, prefix] of [
@@ -111,7 +113,7 @@ const guardedLookup: LookupFunction = (hostname, options, callback) => {
 };
 
 /** POST without following redirects; keeps the first 10 KB of the answer. */
-function postJson(
+export function postJson(
   url: string,
   body: string,
   headers: Record<string, string>,
@@ -119,34 +121,51 @@ function postJson(
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const client = target.protocol === "https:" ? https : http;
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      fn();
+    };
     const req = client.request(
       target,
       {
         method: "POST",
         headers: { ...headers, "Content-Length": Buffer.byteLength(body) },
         lookup: guardedLookup,
-        timeout: DELIVERY_TIMEOUT_MS,
       },
       (res) => {
         const chunks: Buffer[] = [];
         let size = 0;
+        const done = () =>
+          finish(() =>
+            resolve({
+              status: res.statusCode ?? 0,
+              body: Buffer.concat(chunks).toString("utf8").slice(0, 10_000),
+            }),
+          );
         res.on("data", (chunk: Buffer) => {
-          if (size < 10_000) chunks.push(chunk);
+          chunks.push(chunk);
           size += chunk.length;
+          // Enough for the event log: stop reading.
+          if (size >= 10_000) {
+            done();
+            res.destroy();
+          }
         });
-        res.on("end", () =>
-          resolve({
-            status: res.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString("utf8").slice(0, 10_000),
-          }),
-        );
-        res.on("error", reject);
+        res.on("end", done);
+        res.on("close", done);
+        res.on("error", (error) => finish(() => reject(error)));
       },
     );
-    req.on("timeout", () =>
-      req.destroy(new Error("Webhook request timed out")),
+    // A deadline for the whole request, not just idle time: a peer that
+    // trickles bytes can't hold the worker.
+    const deadline = setTimeout(
+      () => req.destroy(new Error("Webhook request timed out")),
+      deliveryTimeoutMs(),
     );
-    req.on("error", reject);
+    req.on("error", (error) => finish(() => reject(error)));
     req.end(body);
   });
 }

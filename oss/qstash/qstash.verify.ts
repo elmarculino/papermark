@@ -199,6 +199,43 @@ async function main() {
     );
 
     await check(
+      "a trickling or huge answer can't hold the worker",
+      async () => {
+        const { postJson } = await import("./lib/trigger/deliver-webhook");
+        const slow = createServer((req, res) => {
+          req.resume();
+          res.writeHead(200);
+          if (req.url === "/trickle") {
+            const t = setInterval(() => res.write("."), 100);
+            res.on("close", () => clearInterval(t));
+          } else {
+            res.end(Buffer.alloc(5_000_000, "a"));
+          }
+        });
+        await new Promise<void>((r) => slow.listen(0, "127.0.0.1", r));
+        const port = (slow.address() as AddressInfo).port;
+        process.env.WEBHOOK_DELIVERY_TIMEOUT_MS = "1000";
+        try {
+          const started = Date.now();
+          let error = "";
+          await postJson(`http://127.0.0.1:${port}/trickle`, "{}", {}).catch(
+            (e) => (error = String(e)),
+          );
+          assert(error.includes("timed out"), `trickle: ${error}`);
+          assert(Date.now() - started < 3000, "deadline is wall-clock");
+          const big = await postJson(`http://127.0.0.1:${port}/big`, "{}", {});
+          assert(
+            big.status === 200 && big.body.length === 10_000,
+            "10 KB kept",
+          );
+        } finally {
+          delete process.env.WEBHOOK_DELIVERY_TIMEOUT_MS;
+          slow.close();
+        }
+      },
+    );
+
+    await check(
       "DNS rebinding: private at connect time is refused",
       async () => {
         delete process.env.WEBHOOK_ALLOW_PRIVATE_URLS;
