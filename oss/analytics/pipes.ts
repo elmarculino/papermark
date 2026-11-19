@@ -143,7 +143,10 @@ export const PIPES: Record<string, (p: Params) => Promise<Params[]>> = {
 
   get_webhook_events: (p) =>
     query(
-      `SELECT data || jsonb_build_object('timestamp', ${ts()}) AS row
+      // Tinybird's zone-less UTC "YYYY-MM-DD HH:MM:SS.mmm": the webhook
+      // event list (components/webhooks/webhook-events.tsx) corrects for it.
+      `SELECT data || jsonb_build_object('timestamp',
+         to_char(ts AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.MS')) AS row
        FROM ${T("webhook_events")} WHERE webhook_id = $1
        ORDER BY ts DESC LIMIT 100`,
       p.webhookId,

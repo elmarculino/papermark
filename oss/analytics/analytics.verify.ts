@@ -251,7 +251,10 @@ async function main() {
         assert(
           hooks.data.length === 1 &&
             hooks.data[0].http_status === 200 &&
-            !!hooks.data[0].timestamp,
+            // Tinybird's zone-less UTC format, which the webhook UI expects
+            /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}$/.test(
+              hooks.data[0].timestamp,
+            ),
           JSON.stringify(hooks.data),
         );
         const team = await tb.getTotalTeamDuration({
