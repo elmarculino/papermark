@@ -11,7 +11,11 @@ export default async function handler(
   }
 
   // Check for secret to confirm this is a valid request
-  if (req.query.secret !== process.env.REVALIDATE_TOKEN) {
+  // [fork] an unset token must not let a request without a secret through
+  if (
+    !process.env.REVALIDATE_TOKEN ||
+    req.query.secret !== process.env.REVALIDATE_TOKEN
+  ) {
     return res.status(401).json({ message: "Invalid token" });
   }
 

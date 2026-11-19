@@ -167,7 +167,11 @@ export async function removeUserPasskey({
 }
 
 /** Login, step 1: a one-time challenge for any of this site's passkeys. */
+/** PASSKEY_LOGIN=false turns passkey sign-in off, not just the button. */
+export const passkeyLoginEnabled = () => process.env.PASSKEY_LOGIN !== "false";
+
 export async function startPasskeyLogin() {
+  if (!passkeyLoginEnabled()) throw new Error("Passkey sign-in is disabled");
   const { rpID } = relyingParty();
   const options = await generateAuthenticationOptions({
     rpID,
@@ -188,6 +192,7 @@ export async function verifyPasskeyLogin({
   challengeId: string;
   response: AuthenticationResponseJSON;
 }): Promise<string | null> {
+  if (!passkeyLoginEnabled()) return null;
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(challengeId)) return null;
   const expectedChallenge = await takeChallenge(`passkey:auth:${challengeId}`);
   if (!expectedChallenge) return null;

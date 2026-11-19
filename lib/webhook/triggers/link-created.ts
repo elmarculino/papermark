@@ -1,3 +1,7 @@
+import {
+  PUBLIC_LINK_BASE_URL,
+  PUBLIC_LINK_HOST,
+} from "@/ee/_shared/public-host";
 import { isTeamPausedById } from "@/ee/features/billing/cancellation/lib/is-team-paused";
 
 import prisma from "@/lib/prisma";
@@ -74,9 +78,9 @@ export async function sendLinkCreatedWebhook({
       id: link.id,
       url: link.domainId
         ? `https://${link.domainSlug}/${link.slug}`
-        : `https://www.papermark.com/view/${link.id}`,
+        : `${PUBLIC_LINK_BASE_URL}/view/${link.id}`, // [fork] the install's host
       domain:
-        link.domainId && link.domainSlug ? link.domainSlug : "papermark.com",
+        link.domainId && link.domainSlug ? link.domainSlug : PUBLIC_LINK_HOST,
       key: link.domainId && link.slug ? link.slug : `view/${link.id}`,
       name: link.name,
       expiresAt: link.expiresAt?.toISOString() || null,

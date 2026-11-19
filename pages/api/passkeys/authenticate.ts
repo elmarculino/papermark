@@ -13,6 +13,9 @@ export default async function handler(
     res.setHeader("Allow", ["POST"]);
     return res.status(405).json({ error: "Method not allowed" });
   }
+  if (process.env.PASSKEY_LOGIN === "false") {
+    return res.status(404).json({ error: "Passkey sign-in is disabled" });
+  }
   const ip =
     (req.headers["x-forwarded-for"] as string | undefined)
       ?.split(",")[0]
