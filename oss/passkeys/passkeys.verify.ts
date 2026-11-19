@@ -43,6 +43,25 @@ async function main() {
     );
   });
 
+  await check(
+    "PASSKEY_LOGIN=false turns sign-in off, not just the button",
+    async () => {
+      const { challengeId } = await startPasskeyLogin();
+      process.env.PASSKEY_LOGIN = "false";
+      try {
+        let threw = false;
+        await startPasskeyLogin().catch(() => (threw = true));
+        assert(threw, "no new challenges");
+        assert(
+          (await verifyPasskeyLogin({ challengeId, response: fake })) === null,
+          "no sign-in",
+        );
+      } finally {
+        delete process.env.PASSKEY_LOGIN;
+      }
+    },
+  );
+
   await check("malformed or unknown challenge id: refused", async () => {
     for (const challengeId of [
       "",

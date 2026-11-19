@@ -59,11 +59,17 @@ These show "not available" or render nothing. Bringing one back means writing it
 - A team on the legacy `trial` plan can't convert Office/Keynote files (no `conversion-trial` queue upstream). Not planned: our installs don't use that plan.
 - No backups of the old-elgin data (`~/stacks/papermark/data/`).
 
+## Limits to know
+
+- `BLOB_BACKEND` / `ANALYTICS_BACKEND` switch the app build only; the jobs worker always uses the fork's S3 and Postgres versions (its tsconfig aliases are static).
+- `NEXT_PUBLIC_APP_BASE_HOST` and `NEXT_PUBLIC_MARKETING_URL` are inlined at build time (put them in `build.env`); with a link host different from the app host, `/view/...` links on the link host are treated as a custom domain.
+- The analytics tables (`papermark_analytics`) are created with `CREATE ... IF NOT EXISTS`: a later column or index change needs its own migration step. Rows are not removed when a document, team or webhook is deleted (as with Tinybird).
+
 ## Backlog
 
 1. **Caddy on a public server** for custom link domains (config in `README.md`), and a test with a real domain.
 2. **Rest of the email branding:** Papermark links and wording inside the templates (the footers are done).
-3. **Domain re-checks:** the daily domain check needs QStash; a verified domain stays verified if its TXT record is later removed.
+3. **Domain re-checks** as a worker schedule: the daily domain check needs QStash, so a verified domain stays verified if its TXT record is later removed, and an unverified row blocks the name until deleted by hand.
 4. **Slack:** configuration only; document it in the README.
 5. **A Komodo stack** for a dedicated server.
 

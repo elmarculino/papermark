@@ -22,7 +22,8 @@ export default async function handle(
   const authHeader = req.headers.authorization;
   const token = authHeader?.split(" ")[1];
 
-  if (token !== process.env.INTERNAL_API_KEY) {
+  // [fork] an unset key must not let a request without a token through
+  if (!process.env.INTERNAL_API_KEY || token !== process.env.INTERNAL_API_KEY) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
