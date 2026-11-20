@@ -21,6 +21,9 @@ const signingKey = (value?: string) =>
 export const receiver = new Receiver({
   currentSigningKey: signingKey(process.env.QSTASH_CURRENT_SIGNING_KEY),
   nextSigningKey: signingKey(process.env.QSTASH_NEXT_SIGNING_KEY),
+  // [fork] Never the SDK's dev mode: with QSTASH_DEV=true it would ignore the
+  // keys above and accept signatures made with its publicly known dev key.
+  devMode: false,
 });
 
 export const qstash = new Client({

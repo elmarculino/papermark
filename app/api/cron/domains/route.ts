@@ -22,13 +22,17 @@ import { handleDomainUpdates } from "./utils";
 export const maxDuration = 300; // 5 minutes in seconds
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  // [fork] verify everywhere but development (was: only on Vercel)
+  // [fork] Verify the raw body as signed (was: re-serialised JSON, which
+  // fails for a body with whitespace), everywhere but development (was: only
+  // on Vercel). A bad signature is a 401, not a thrown error.
+  const body = await req.text();
   if (process.env.NODE_ENV !== "development") {
-    const isValid = await receiver.verify({
-      signature: req.headers.get("Upstash-Signature") || "",
-      body: JSON.stringify(body),
-    });
+    const isValid = await receiver
+      .verify({
+        signature: req.headers.get("Upstash-Signature") || "",
+        body,
+      })
+      .catch(() => false);
     if (!isValid) {
       return new Response("Unauthorized", { status: 401 });
     }
