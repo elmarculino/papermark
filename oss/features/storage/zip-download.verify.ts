@@ -19,9 +19,22 @@ loadEnvConfig(process.cwd());
 async function main() {
   const { getStorageConfig } = await import("./config");
   const { getS3Client } = await import("../../../lib/files/aws-client");
-  const { zipDownloadBatch } = await import("./zip-download-batch");
+  const { zipDownloadBatch: batch } = await import("./zip-download-batch");
   const config = getStorageConfig();
   const client = getS3Client();
+
+  // Every zip a check makes is deleted at the end; nothing else under
+  // bulk-downloads/ is touched (the bucket may hold real users' zips).
+  const zipKeys = new Set<string>();
+  const keyOf = (url: string) => {
+    const p = decodeURIComponent(new URL(url).pathname);
+    return p.slice(p.indexOf("bulk-downloads/"));
+  };
+  const zipDownloadBatch: typeof batch = async (params) => {
+    const result = await batch(params);
+    zipKeys.add(keyOf(result.downloadUrl));
+    return result;
+  };
 
   const pdf = PDF.create();
   pdf.addPage({ width: 300, height: 300 });
@@ -75,7 +88,7 @@ async function main() {
       const res = await fetch(downloadUrl);
       assert(res.ok, `download ${res.status}`);
       assert(
-        /attachment; filename\*=UTF-8''Q4%20Room-20261118T000000Z\.zip/.test(
+        /^attachment; filename="[^"]+\.zip"; filename\*=UTF-8''Q4%20Room-20261118T000000Z\.zip$/.test(
           res.headers.get("content-disposition") ?? "",
         ),
         `content-disposition: ${res.headers.get("content-disposition")}`,
@@ -213,6 +226,7 @@ async function main() {
         assert(status === "COMPLETED", `run ${status}`);
         const done = await downloadJobStore.getJob(job.id);
         assert(done?.status === "COMPLETED", `job ${done?.status}`);
+        zipKeys.add(keyOf(done!.downloadUrls![0]));
         const res = await fetch(done!.downloadUrls![0]);
         assert(res.ok, `download ${res.status}`);
         const zip = path.join(dir, "job.zip");
@@ -229,27 +243,168 @@ async function main() {
       const { deleteExpiredBulkDownloads, BULK_DOWNLOAD_PREFIX } =
         await import("./lib/trigger/cleanup-bulk-downloads");
       const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+      // A prefix of its own: real zips in the bucket are never swept.
+      const own = `${BULK_DOWNLOAD_PREFIX}verify-${Date.now()}/`;
+      for (const name of ["a.zip", "b.zip", "c.zip"]) {
+        await client.send(
+          new PutObjectCommand({
+            Bucket: config.bucket,
+            Key: `${own}${name}`,
+            Body: "zip",
+          }),
+        );
+      }
       const list = async () =>
         (
           await client.send(
-            new ListObjectsV2Command({
-              Bucket: config.bucket,
-              Prefix: BULK_DOWNLOAD_PREFIX,
-            }),
+            new ListObjectsV2Command({ Bucket: config.bucket, Prefix: own }),
           )
         ).Contents?.length ?? 0;
-      const before = await list();
-      assert(before >= 3, `zips from the checks above: ${before}`);
+      assert((await list()) === 3, "three zips");
       assert(
-        (await deleteExpiredBulkDownloads()).deleted === 0,
+        (await deleteExpiredBulkDownloads({ prefix: own })).deleted === 0,
         "fresh zips kept",
       );
-      const { deleted } = await deleteExpiredBulkDownloads(
-        Date.now() + 5 * 24 * 60 * 60 * 1000,
-      );
-      assert(deleted === before, `deleted ${deleted} of ${before}`);
+      const { deleted } = await deleteExpiredBulkDownloads({
+        prefix: own,
+        now: Date.now() + 5 * 24 * 60 * 60 * 1000,
+      });
+      assert(deleted === 3, `deleted ${deleted} of 3`);
       assert((await list()) === 0, "prefix empty");
+      let refused = false;
+      await deleteExpiredBulkDownloads({ prefix: "zip-verify/" }).catch(
+        () => (refused = true),
+      );
+      assert(refused, "a prefix outside bulk-downloads/ is refused");
     });
+
+    await check(
+      "cleanup fails when S3 reports objects not deleted",
+      async () => {
+        const { deleteExpiredBulkDownloads, BULK_DOWNLOAD_PREFIX } =
+          await import("./lib/trigger/cleanup-bulk-downloads");
+        const { S3Client } = await import("@aws-sdk/client-s3");
+        const own = `${BULK_DOWNLOAD_PREFIX}verify-${Date.now()}-errors/`;
+        const Key = `${own}stuck.zip`;
+        await client.send(
+          new PutObjectCommand({ Bucket: config.bucket, Key, Body: "zip" }),
+        );
+        const realSend = S3Client.prototype.send;
+        (S3Client.prototype as any).send = function (
+          command: any,
+          ...rest: any[]
+        ) {
+          if (command?.constructor?.name === "DeleteObjectsCommand") {
+            return Promise.resolve({
+              Deleted: [],
+              Errors: [{ Key, Code: "AccessDenied", Message: "denied" }],
+            });
+          }
+          return realSend.call(this, command, ...rest);
+        };
+        let error: unknown;
+        try {
+          await deleteExpiredBulkDownloads({
+            prefix: own,
+            now: Date.now() + 5 * 24 * 60 * 60 * 1000,
+          });
+        } catch (e) {
+          error = e;
+        } finally {
+          (S3Client.prototype as any).send = realSend;
+          await client.send(
+            new DeleteObjectCommand({ Bucket: config.bucket, Key }),
+          );
+        }
+        assert(String(error).includes("AccessDenied"), `rejects: ${error}`);
+      },
+    );
+
+    await check(
+      "the download names a room with quotes and brackets correctly",
+      async () => {
+        const name = "Sala d'Ana (2026) *final*";
+        const { downloadUrl } = await zipDownloadBatch({
+          storageConfig: config,
+          sourceBucket: config.bucket,
+          zipFileName: name,
+          folderStructure: {
+            "/": {
+              name: "Root",
+              path: "/",
+              files: [{ name: "b.txt", key: `${prefix}/b.txt` }],
+            },
+          },
+        });
+        const res = await fetch(downloadUrl);
+        assert(res.ok, `download ${res.status}`);
+        await res.arrayBuffer();
+        const header = res.headers.get("content-disposition") ?? "";
+        const star = header.match(/filename\*=UTF-8''([^;\s]+)/)?.[1] ?? "";
+        // RFC 5987 attr-chars only, and it decodes back to the name.
+        assert(/^[A-Za-z0-9%!#$&+.^_`|~-]+$/.test(star), `filename*: ${star}`);
+        assert(decodeURIComponent(star) === `${name}.zip`, header);
+        assert(/filename="[^"]+\.zip"/.test(header), `fallback: ${header}`);
+      },
+    );
+
+    await check(
+      "a source stream closing early without an error rejects",
+      async () => {
+        const { S3Client } = await import("@aws-sdk/client-s3");
+        const { Readable } = await import("node:stream");
+        const realSend = S3Client.prototype.send;
+        (S3Client.prototype as any).send = function (
+          command: any,
+          ...rest: any[]
+        ) {
+          if (command?.input?.Key === `${prefix}/closing`) {
+            let sent = false;
+            const body = new Readable({
+              read() {
+                if (sent) return;
+                sent = true;
+                this.push(Buffer.alloc(1000, 1));
+                // A dropped connection: closed, no 'end', no 'error'.
+                setTimeout(() => this.destroy(), 300);
+              },
+            });
+            return Promise.resolve({ Body: body });
+          }
+          return realSend.call(this, command, ...rest);
+        };
+        const started = Date.now();
+        let error: unknown;
+        try {
+          await Promise.race([
+            zipDownloadBatch({
+              storageConfig: config,
+              sourceBucket: config.bucket,
+              zipFileName: "closing",
+              folderStructure: {
+                "/": {
+                  name: "Root",
+                  path: "/",
+                  files: [{ name: "c.bin", key: `${prefix}/closing` }],
+                },
+              },
+            }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("hung")), 20000),
+            ),
+          ]);
+        } catch (e) {
+          error = e;
+        } finally {
+          (S3Client.prototype as any).send = realSend;
+        }
+        assert(
+          error && /premature close/i.test(String(error)),
+          `rejects: ${error}`,
+        );
+        assert(Date.now() - started < 20000, "no hang");
+      },
+    );
 
     await check(
       "watermarked entries then plain ones; images become .pdf",
@@ -452,7 +607,7 @@ async function main() {
       assert(failed, "rejects");
     });
   } finally {
-    for (const Key of Object.keys(objects)) {
+    for (const Key of [...Object.keys(objects), ...zipKeys]) {
       await client.send(
         new DeleteObjectCommand({ Bucket: config.bucket, Key }),
       );

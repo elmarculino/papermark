@@ -18,11 +18,14 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import archiver from "archiver";
 import { randomUUID } from "node:crypto";
-import { PassThrough, Readable } from "node:stream";
+import { PassThrough, Readable, finished } from "node:stream";
 
 import { getS3Client } from "@/lib/files/aws-client";
 import type { BulkDownloadFolderStructure } from "@/lib/trigger/bulk-download";
-import { getFileNameWithPdfExtension } from "@/lib/utils";
+import {
+  buildAttachmentDispositionForName,
+  getFileNameWithPdfExtension,
+} from "@/lib/utils";
 import { buildWatermarkedPdf } from "@/lib/utils/watermark-pdf";
 
 import { BULK_DOWNLOAD_PREFIX } from "./lib/trigger/cleanup-bulk-downloads";
@@ -137,7 +140,10 @@ export async function zipDownloadBatch({
         archive.on("entry", onEntry);
         if (source instanceof Readable) {
           current = source;
-          source.on("error", (error) => {
+          // An error, or a close before the end without one (a dropped
+          // connection), fails the batch instead of leaving it waiting.
+          finished(source, (error) => {
+            if (!error) return;
             reject(error);
             fail(error);
           });
@@ -194,7 +200,8 @@ export async function zipDownloadBatch({
         }
       }
     }
-    archive.finalize();
+    // finalize() rejects on a ZIP engine error too: route it to `failed`.
+    archive.finalize().catch((error) => fail(error));
     await guard(uploaded);
   };
 
@@ -220,7 +227,7 @@ export async function zipDownloadBatch({
     new GetObjectCommand({
       Bucket: config.bucket,
       Key: key,
-      ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      ResponseContentDisposition: buildAttachmentDispositionForName(fileName),
     }),
     {
       expiresIn: Math.min(
