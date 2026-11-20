@@ -12,7 +12,15 @@ import { getS3Client } from "@/lib/files/aws-client";
 export const BULK_DOWNLOAD_PREFIX = "bulk-downloads/";
 const KEEP_MS = 4 * 24 * 60 * 60 * 1000;
 
-export async function deleteExpiredBulkDownloads(now = Date.now()) {
+/** `prefix` narrows the sweep to a subfolder of BULK_DOWNLOAD_PREFIX (the
+ * runtime check uses its own, so it never touches real zips). */
+export async function deleteExpiredBulkDownloads({
+  now = Date.now(),
+  prefix = BULK_DOWNLOAD_PREFIX,
+}: { now?: number; prefix?: string } = {}) {
+  if (!prefix.startsWith(BULK_DOWNLOAD_PREFIX)) {
+    throw new Error(`Not under ${BULK_DOWNLOAD_PREFIX}: ${prefix}`);
+  }
   // Only the S3 transport writes zips (and has an S3 client).
   if (process.env.NEXT_PUBLIC_UPLOAD_TRANSPORT !== "s3") return { deleted: 0 };
   const { bucket } = getStorageConfig();
@@ -23,7 +31,7 @@ export async function deleteExpiredBulkDownloads(now = Date.now()) {
     const page = await client.send(
       new ListObjectsV2Command({
         Bucket: bucket,
-        Prefix: BULK_DOWNLOAD_PREFIX,
+        Prefix: prefix,
         ContinuationToken: token,
       }),
     );
@@ -32,13 +40,20 @@ export async function deleteExpiredBulkDownloads(now = Date.now()) {
         o.Key && o.LastModified && now - o.LastModified.getTime() > KEEP_MS,
     );
     if (expired.length > 0) {
-      await client.send(
+      // A successful DeleteObjects can still report per-object failures.
+      const { Deleted = [], Errors = [] } = await client.send(
         new DeleteObjectsCommand({
           Bucket: bucket,
           Delete: { Objects: expired.map((o) => ({ Key: o.Key! })) },
         }),
       );
-      deleted += expired.length;
+      deleted += Deleted.length;
+      if (Errors.length > 0) {
+        const first = Errors[0];
+        throw new Error(
+          `${Errors.length} of ${expired.length} expired zips not deleted (first: ${first.Key}: ${first.Code} ${first.Message ?? ""})`.trim(),
+        );
+      }
     }
     token = page.IsTruncated ? page.NextContinuationToken : undefined;
   } while (token);
